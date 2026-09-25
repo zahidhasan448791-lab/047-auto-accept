@@ -24,16 +24,56 @@ jobs:
 
       - name: Extract and Build APK
         run: |
-          # সব জিপ ফাইল খুঁজে আনজিপ করা
+          # জিপ ফাইল আনপ্যাক
           unzip -o "*.zip" -d .
 
-          # SDK ও থিম অটো-ফিক্স
-          sed -i 's/compileSdk = 35/compileSdk = 34/g' app/build.gradle.kts || true
-          sed -i 's/targetSdk = 35/targetSdk = 34/g' app/build.gradle.kts || true
+          # থিম ও আইকন ফিক্স (compileSdk ৩৫-এই থাকবে)
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
           sed -i 's/@mipmap\/ic_launcher/@android:drawable\/sym_def_app_icon/g' app/src/main/AndroidManifest.xml || true
           sed -i 's/@mipmap\/ic_launcher_round/@android:drawable\/sym_def_app_icon/g' app/src/main/AndroidManifest.xml || true
+
+          # ফ্রেশ ও নিরাপদ MainActivity তৈরি
+          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
+          package com.autoaccept.store047
+
+          import android.content.Intent
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.activity.ComponentActivity
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val layout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(60, 100, 60, 60)
+                  }
+                  val title = TextView(this).apply {
+                      text = "047 Auto Accept Assistant"
+                      textSize = 22f
+                  }
+                  val sub = TextView(this).apply {
+                      text = "Branch 047 order monitoring is ACTIVE."
+                      textSize = 14f
+                      setPadding(0, 20, 0, 40)
+                  }
+                  val btn = Button(this).apply {
+                      text = "Open Accessibility Settings"
+                      setOnClickListener {
+                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                      }
+                  }
+                  layout.addView(title)
+                  layout.addView(sub)
+                  layout.addView(btn)
+                  setContentView(layout)
+              }
+          }
+          EOF
 
           # আসল APK কম্পাইল করা
           gradle assembleDebug
