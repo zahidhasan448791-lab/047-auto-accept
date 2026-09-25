@@ -2,40 +2,44 @@ name: Build APK
 
 on:
   push:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Java 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-    - name: Extract Project ZIP
-      run: |
-        unzip -o *.zip
-        chmod +x gradlew || chmod +x */gradlew || true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-    - name: Build APK with Gradle
-      run: |
-        if [ -f "./gradlew" ]; then
-          ./gradlew assembleDebug
-        elif [ -f "./android/gradlew" ]; then
-          cd android && ./gradlew assembleDebug
-        else
-          find . -name "gradlew" -execdir ./gradlew assembleDebug \;
-        fi
+      - name: Extract and Build APK
+        run: |
+          # সব জিপ ফাইল খুঁজে আনজিপ করা
+          unzip -o "*.zip" -d .
 
-    - name: Upload Finished APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: 047-Auto-Accept-APK
-        path: "**/build/outputs/apk/debug/*.apk"
+          # SDK ও থিম অটো-ফিক্স
+          sed -i 's/compileSdk = 35/compileSdk = 34/g' app/build.gradle.kts || true
+          sed -i 's/targetSdk = 35/targetSdk = 34/g' app/build.gradle.kts || true
+          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
+          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
+          sed -i 's/@mipmap\/ic_launcher/@android:drawable\/sym_def_app_icon/g' app/src/main/AndroidManifest.xml || true
+          sed -i 's/@mipmap\/ic_launcher_round/@android:drawable\/sym_def_app_icon/g' app/src/main/AndroidManifest.xml || true
+
+          # আসল APK কম্পাইল করা
+          gradle assembleDebug
+
+      - name: Upload Finished APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: 047-AutoAccept-APK
+          path: app/build/outputs/apk/debug/*.apk
