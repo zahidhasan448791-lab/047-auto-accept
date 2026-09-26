@@ -89,81 +89,82 @@ jobs:
               android:notificationTimeout="80" />
           EOF
 
-          # ৫. নিখুঁত ও ইউনিভার্সাল সোয়াইপ ইঞ্জিন (Kotlin স্ট্যান্ডার্ড মেথড)
-          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/engine/AutomationEngine.kt
-          package com.autoaccept.store047.engine
+          # ৫. অ্যাক্সেসিবিলিটি সার্ভিসে সরাসরি ইউনিভার্সাল সোয়াইপ হ্যান্ডলার যুক্ত করা
+          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/service/AutoAcceptAccessibilityService.kt
+          package com.autoaccept.store047.service
 
           import android.accessibilityservice.AccessibilityService
           import android.accessibilityservice.GestureDescription
           import android.graphics.Path
           import android.graphics.Rect
+          import android.view.accessibility.AccessibilityEvent
           import android.view.accessibility.AccessibilityNodeInfo
+          import com.autoaccept.store047.data.PreferencesManager
 
-          object AutomationEngine {
+          class AutoAcceptAccessibilityService : AccessibilityService() {
 
+              private lateinit var prefs: PreferencesManager
               private var lastProcessedTime: Long = 0
 
-              fun processWindow(service: AccessibilityService, rootNode: AccessibilityNodeInfo?) {
-                  if (rootNode == null) return
+              override fun onServiceConnected() {
+                  super.onServiceConnected()
+                  prefs = PreferencesManager.getInstance(this)
+              }
 
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+                  if (event == null) return
+                  if (!prefs.isAutomationEnabled.value) return
+
+                  val root = rootInActiveWindow ?: return
                   val currentTime = System.currentTimeMillis()
-                  if (currentTime - lastProcessedTime < 2200) return
+                  if (currentTime - lastProcessedTime < 2000) return
 
-                  val allTexts = mutableListOf<String>()
-                  collectTexts(rootNode, allTexts)
-                  val combined = allTexts.joinToString(" ").lowercase()
+                  val texts = mutableListOf<String>()
+                  collectTexts(root, texts)
+                  val combined = texts.joinToString(" ").lowercase()
 
-                  val hasStore047 = combined.contains("047") || combined.contains("nahda") || combined.contains("6283")
-
-                  if (hasStore047) {
-                      val acceptNode = findAcceptNode(rootNode)
+                  if (combined.contains("047") || combined.contains("nahda") || combined.contains("6283")) {
+                      val acceptNode = findAcceptNode(root)
+                      lastProcessedTime = currentTime
 
                       if (acceptNode != null) {
-                          lastProcessedTime = currentTime
                           val bounds = Rect()
                           acceptNode.getBoundsInScreen(bounds)
 
                           val startX = bounds.left.toFloat() + (bounds.height().toFloat() / 2f)
-                          val endX = bounds.right.toFloat() - (bounds.height().toFloat() / 4f)
+                          val endX = bounds.right.toFloat() - 20f
                           val centerY = bounds.centerY().toFloat()
 
-                          performUniversalSwipe(service, startX, endX, centerY)
-
+                          performSwipe(startX, endX, centerY)
                           try {
                               acceptNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                           } catch (e: Exception) {}
                       } else {
-                          val metrics = service.resources.displayMetrics
+                          val metrics = resources.displayMetrics
                           val w = metrics.widthPixels.toFloat()
                           val h = metrics.heightPixels.toFloat()
-
-                          lastProcessedTime = currentTime
-                          performUniversalSwipe(service, w * 0.15f, w * 0.88f, h * 0.52f)
+                          performSwipe(w * 0.15f, w * 0.88f, h * 0.52f)
                       }
                   }
               }
 
-              private fun performUniversalSwipe(service: AccessibilityService, startX: Float, endX: Float, y: Float) {
+              private fun performSwipe(startX: Float, endX: Float, y: Float) {
                   val swipePath = Path().apply {
                       moveTo(startX, y)
                       lineTo(endX, y)
                   }
-
                   val gesture = GestureDescription.Builder()
-                      .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 420))
+                      .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 400))
                       .build()
-
-                  service.dispatchGesture(gesture, null, null)
+                  dispatchGesture(gesture, null, null)
               }
 
               private fun findAcceptNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
                   val text = (node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")
                   val lower = text.lowercase()
-
                   if (lower.contains("accept") || lower.contains("swipe") || lower.contains("slide")) {
                       return node
                   }
-
                   for (i in 0 until node.childCount) {
                       val child = node.getChild(i) ?: continue
                       val found = findAcceptNode(child)
@@ -180,10 +181,12 @@ jobs:
                       collectTexts(child, list)
                   }
               }
+
+              override fun onInterrupt() {}
           }
           EOF
 
-          # ৬. APK বিল্ড সম্পন্ন করা
+          # ৬. APK কম্পাইল
           gradle assembleDebug
 
       - name: Upload Finished APK
