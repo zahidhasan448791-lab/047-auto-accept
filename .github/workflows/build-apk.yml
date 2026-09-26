@@ -22,65 +22,218 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build 047 Auto Accept APK
+      - name: Build mr.wow Pro APK
         run: |
           # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. থিম ও ম্যানিফেস্ট ফিক্স
+          # ২. অ্যাপের নাম পরিবর্তন করে "mr.wow" করা
+          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">mr.wow<\/string>/g' app/src/main/res/values/strings.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
 
-          # ৩. ডিফল্ট অটোমেশন সর্বদা TRUE করা
+          # ম্যানিফেস্টে নোটিফিকেশন পারমিশন ও লেবেল নিশ্চিত করা
+          sed -i 's/<application/<uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/><application android:label="mr.wow"/g' app/src/main/AndroidManifest.xml || true
+
+          # ৩. ডিফল্ট অটোমেশন সর্বদা TRUE রাখা
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # ৪. সহজ অন/অফ সুইচ ও ক্লিন ডিজাইন সহ MainActivity
+          # ৪. mr.wow MainActivity (অল ইংলিশ, রানিং নোটিফিকেশন ও আলাদা পারমিশন পেজ)
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
+          import android.app.AlertDialog
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
           import android.content.Context
           import android.content.Intent
           import android.graphics.Color
           import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
+          import android.os.Build
           import android.os.Bundle
           import android.provider.Settings
           import android.view.Gravity
+          import android.view.View
           import android.widget.Button
+          import android.widget.FrameLayout
           import android.widget.LinearLayout
+          import android.widget.ScrollView
           import android.widget.TextView
           import android.widget.Toast
           import androidx.activity.ComponentActivity
+          import androidx.core.app.NotificationCompat
           import com.autoaccept.store047.data.PreferencesManager
 
           class MainActivity : ComponentActivity() {
 
+              private val CHANNEL_ID = "mr_wow_running_channel"
+              private val NOTIFICATION_ID = 47001
+
               private lateinit var prefs: PreferencesManager
-              private var isEnabled = true
+              private lateinit var container: FrameLayout
               private lateinit var statusText: TextView
-              private lateinit var toggleBtn: Button
+              private lateinit var statusDesc: TextView
+              private lateinit var btnOn: Button
+              private lateinit var btnOff: Button
+              private var isEnabled = true
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   prefs = PreferencesManager.getInstance(this)
+                  createNotificationChannel()
 
                   val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
                   isEnabled = sp.getBoolean("key_automation_enabled", true)
                   prefs.setAutomationEnabled(isEnabled)
 
-                  val root = LinearLayout(this).apply {
+                  if (isEnabled && isAccessibilityEnabled()) {
+                      showRunningNotification()
+                  }
+
+                  container = FrameLayout(this)
+                  setContentView(container)
+                  refreshScreens()
+              }
+
+              private fun createNotificationChannel() {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val name = "mr.wow Service Status"
+                      val descriptionText = "Shows real-time background status of mr.wow"
+                      val importance = NotificationManager.IMPORTANCE_LOW
+                      val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+                          description = descriptionText
+                          setShowBadge(false)
+                      }
+                      val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      notificationManager.createNotificationChannel(channel)
+                  }
+              }
+
+              private fun showRunningNotification() {
+                  val intent = Intent(this, MainActivity::class.java).apply {
+                      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                  }
+                  val pendingIntent = PendingIntent.getActivity(
+                      this,
+                      0,
+                      intent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+
+                  val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+                      .setSmallIcon(android.R.drawable.stat_notify_sync)
+                      .setContentTitle("mr.wow - Active & Running")
+                      .setContentText("Monitoring Branch 047 orders in high-speed mode.")
+                      .setPriority(NotificationCompat.PRIORITY_LOW)
+                      .setOngoing(true)
+                      .setContentIntent(pendingIntent)
+
+                  val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  notificationManager.notify(NOTIFICATION_ID, builder.build())
+              }
+
+              private fun cancelRunningNotification() {
+                  val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                  notificationManager.cancel(NOTIFICATION_ID)
+              }
+
+              private fun isAccessibilityEnabled(): Boolean {
+                  val service = "${packageName}/com.autoaccept.store047.service.AutoAcceptAccessibilityService"
+                  val enabledServices = Settings.Secure.getString(
+                      contentResolver,
+                      Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                  ) ?: return false
+                  return enabledServices.contains(packageName) || enabledServices.contains("AutoAcceptAccessibilityService")
+              }
+
+              private fun refreshScreens() {
+                  container.removeAllViews()
+                  if (!isAccessibilityEnabled()) {
+                      container.addView(createPermissionPage())
+                  } else {
+                      container.addView(createDashboardPage())
+                  }
+              }
+
+              // Accessibility Setup Page (Shown ONLY until turned ON)
+              private fun createPermissionPage(): View {
+                  val layout = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
-                      setBackgroundColor(Color.parseColor("#0F172A"))
-                      setPadding(48, 80, 48, 50)
+                      setBackgroundColor(Color.parseColor("#0B0F19"))
+                      setPadding(48, 120, 48, 60)
                       gravity = Gravity.CENTER_HORIZONTAL
                   }
 
+                  val icon = TextView(this).apply {
+                      text = "⚡"
+                      textSize = 50f
+                      gravity = Gravity.CENTER
+                      setPadding(0, 0, 0, 24)
+                  }
+                  layout.addView(icon)
+
                   val title = TextView(this).apply {
-                      text = "047 Auto Accept"
+                      text = "Permission Required"
                       setTextColor(Color.WHITE)
-                      textSize = 25f
+                      textSize = 23f
+                      typeface = Typeface.DEFAULT_BOLD
+                      gravity = Gravity.CENTER
+                  }
+                  layout.addView(title)
+
+                  val desc = TextView(this).apply {
+                      text = "mr.wow needs Accessibility Service permission to detect and auto-click Store 047 orders in real-time.\n\nOnce granted, this setup screen will never appear again."
+                      setTextColor(Color.parseColor("#94A3B8"))
+                      textSize = 14f
+                      gravity = Gravity.CENTER
+                      setPadding(0, 16, 0, 50)
+                  }
+                  layout.addView(desc)
+
+                  val btn = Button(this).apply {
+                      text = "ENABLE ACCESSIBILITY PERMISSION"
+                      setTextColor(Color.WHITE)
+                      textSize = 14f
+                      typeface = Typeface.DEFAULT_BOLD
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#2563EB"))
+                          cornerRadius = 20f
+                      }
+                      layoutParams = LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          140
+                      )
+                      setOnClickListener {
+                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                      }
+                  }
+                  layout.addView(btn)
+                  return layout
+              }
+
+              // Main Dashboard Page
+              private fun createDashboardPage(): View {
+                  val scrollView = ScrollView(this).apply {
+                      setBackgroundColor(Color.parseColor("#0B0F19"))
+                      isFillViewport = true
+                  }
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(44, 70, 44, 50)
+                      gravity = Gravity.CENTER_HORIZONTAL
+                  }
+                  scrollView.addView(root)
+
+                  // App Title
+                  val title = TextView(this).apply {
+                      text = "mr.wow"
+                      setTextColor(Color.WHITE)
+                      textSize = 30f
                       typeface = Typeface.DEFAULT_BOLD
                       gravity = Gravity.CENTER
                   }
@@ -89,102 +242,210 @@ jobs:
                   val sub = TextView(this).apply {
                       text = "Branch 047 High-Speed Assistant"
                       setTextColor(Color.parseColor("#38BDF8"))
-                      textSize = 14f
+                      textSize = 13f
                       typeface = Typeface.DEFAULT_BOLD
                       gravity = Gravity.CENTER
-                      setPadding(0, 10, 0, 40)
+                      setPadding(0, 6, 0, 40)
                   }
                   root.addView(sub)
 
-                  statusText = TextView(this).apply {
-                      textSize = 17f
-                      typeface = Typeface.DEFAULT_BOLD
-                      gravity = Gravity.CENTER
-                      setPadding(0, 0, 0, 24)
-                  }
-                  root.addView(statusText)
-
-                  // ON / OFF বাটন
-                  toggleBtn = Button(this).apply {
-                      textSize = 16f
-                      typeface = Typeface.DEFAULT_BOLD
-                      setTextColor(Color.WHITE)
+                  // Status Card
+                  val statusCard = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(40, 36, 40, 36)
+                      gravity = Gravity.CENTER_HORIZONTAL
                       layoutParams = LinearLayout.LayoutParams(
                           LinearLayout.LayoutParams.MATCH_PARENT,
-                          140
-                      )
-                      setOnClickListener {
-                          isEnabled = !isEnabled
-                          prefs.setAutomationEnabled(isEnabled)
-                          updateUI()
-                          Toast.makeText(
-                              this@MainActivity,
-                              if (isEnabled) "অটো-এক্সেপ্ট চালু হয়েছে" else "অটো-এক্সেপ্ট বন্ধ করা হয়েছে",
-                              Toast.LENGTH_SHORT
-                          ).show()
+                          LinearLayout.LayoutParams.WRAP_CONTENT
+                      ).apply { setMargins(0, 0, 0, 36) }
+                      background = GradientDrawable().apply {
+                          cornerRadius = 24f
+                          setColor(Color.parseColor("#161E2E"))
                       }
                   }
-                  root.addView(toggleBtn)
 
-                  // এক্সেসিবিলিটি সেটিংস ওপেন বাটন
-                  val permBtn = Button(this).apply {
-                      text = "Open Accessibility Settings"
-                      textSize = 14f
+                  statusText = TextView(this).apply {
+                      textSize = 18f
+                      typeface = Typeface.DEFAULT_BOLD
+                      gravity = Gravity.CENTER
+                  }
+                  statusDesc = TextView(this).apply {
+                      textSize = 13f
+                      gravity = Gravity.CENTER
+                      setPadding(0, 10, 0, 0)
+                  }
+                  statusCard.addView(statusText)
+                  statusCard.addView(statusDesc)
+                  root.addView(statusCard)
+
+                  // Two Distinct ON and OFF Buttons
+                  val buttonRow = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      layoutParams = LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          145
+                      ).apply { setMargins(0, 0, 0, 30) }
+                  }
+
+                  // 🟢 ON BUTTON
+                  btnOn = Button(this).apply {
+                      text = "🟢 ON (START)"
+                      textSize = 15f
                       typeface = Typeface.DEFAULT_BOLD
                       setTextColor(Color.WHITE)
+                      val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+                          setMargins(0, 0, 14, 0)
+                      }
+                      layoutParams = p
+                      setOnClickListener {
+                          setAutomation(true)
+                      }
+                  }
+
+                  // 🔴 OFF BUTTON
+                  btnOff = Button(this).apply {
+                      text = "🔴 OFF (STOP)"
+                      textSize = 15f
+                      typeface = Typeface.DEFAULT_BOLD
+                      setTextColor(Color.WHITE)
+                      val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
+                          setMargins(14, 0, 0, 0)
+                      }
+                      layoutParams = p
+                      setOnClickListener {
+                          setAutomation(false)
+                      }
+                  }
+
+                  buttonRow.addView(btnOn)
+                  buttonRow.addView(btnOff)
+                  root.addView(buttonRow)
+
+                  // Test Order Simulator
+                  val testBtn = Button(this).apply {
+                      text = "🧪 Test 047 Simulator"
+                      setTextColor(Color.WHITE)
+                      textSize = 14f
+                      typeface = Typeface.DEFAULT_BOLD
                       val lp = LinearLayout.LayoutParams(
                           LinearLayout.LayoutParams.MATCH_PARENT,
-                          130
-                      ).apply { setMargins(0, 30, 0, 0) }
+                          125
+                      ).apply { setMargins(0, 20, 0, 0) }
                       layoutParams = lp
                       background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#2563EB"))
+                          setColor(Color.parseColor("#334155"))
                           cornerRadius = 18f
                       }
                       setOnClickListener {
-                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                          showSimulator()
                       }
                   }
-                  root.addView(permBtn)
+                  root.addView(testBtn)
 
-                  setContentView(root)
-                  updateUI()
+                  updateButtonsUI()
+                  return scrollView
               }
 
-              private fun updateUI() {
+              private fun setAutomation(enabled: Boolean) {
+                  isEnabled = enabled
+                  prefs.setAutomationEnabled(enabled)
+                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
+                  sp.edit().putBoolean("key_automation_enabled", enabled).apply()
+
+                  if (enabled) {
+                      showRunningNotification()
+                      Toast.makeText(this, "✅ mr.wow is ACTIVE!", Toast.LENGTH_SHORT).show()
+                  } else {
+                      cancelRunningNotification()
+                      Toast.makeText(this, "⏸️ mr.wow is PAUSED!", Toast.LENGTH_SHORT).show()
+                  }
+                  updateButtonsUI()
+              }
+
+              private fun updateButtonsUI() {
                   if (isEnabled) {
-                      statusText.text = "● অটো-এক্সেপ্ট: চালু আছে (ACTIVE)"
+                      statusText.text = "● STATUS: RUNNING (ACTIVE)"
                       statusText.setTextColor(Color.parseColor("#22C55E"))
-                      toggleBtn.text = "অটো-এক্সেপ্ট বন্ধ করুন (OFF)"
-                      toggleBtn.background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#DC2626"))
+                      statusDesc.text = "Auto-accept is active and scanning for Branch 047 orders."
+                      statusDesc.setTextColor(Color.parseColor("#86EFAC"))
+
+                      btnOn.background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#15803D"))
+                          cornerRadius = 18f
+                      }
+                      btnOff.background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#1E293B"))
                           cornerRadius = 18f
                       }
                   } else {
-                      statusText.text = "● অটো-এক্সেপ্ট: বন্ধ আছে (OFF)"
+                      statusText.text = "● STATUS: STOPPED (OFF)"
                       statusText.setTextColor(Color.parseColor("#EF4444"))
-                      toggleBtn.text = "অটো-এক্সেপ্ট চালু করুন (ON)"
-                      toggleBtn.background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#16A34A"))
+                      statusDesc.text = "Service is paused. No clicks will be made."
+                      statusDesc.setTextColor(Color.parseColor("#FCA5A5"))
+
+                      btnOn.background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#1E293B"))
+                          cornerRadius = 18f
+                      }
+                      btnOff.background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#DC2626"))
                           cornerRadius = 18f
                       }
                   }
+              }
+
+              private fun showSimulator() {
+                  val layout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.parseColor("#1E293B"))
+                      setPadding(50, 50, 50, 50)
+                      gravity = Gravity.CENTER_HORIZONTAL
+                  }
+                  val text = TextView(this).apply {
+                      text = "New Order: Store 047"
+                      setTextColor(Color.WHITE)
+                      textSize = 20f
+                      typeface = Typeface.DEFAULT_BOLD
+                  }
+                  val btn = Button(this).apply {
+                      text = "Accept the order"
+                      setTextColor(Color.WHITE)
+                      textSize = 15f
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#F59E0B"))
+                          cornerRadius = 16f
+                      }
+                      setOnClickListener {
+                          Toast.makeText(this@MainActivity, "Simulation Success: 047 detected!", Toast.LENGTH_LONG).show()
+                      }
+                  }
+                  layout.addView(text)
+                  layout.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(1, 30) })
+                  layout.addView(btn)
+
+                  AlertDialog.Builder(this)
+                      .setView(layout)
+                      .create()
+                      .show()
               }
 
               override fun onResume() {
                   super.onResume()
                   val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
                   isEnabled = sp.getBoolean("key_automation_enabled", true)
-                  updateUI()
+                  if (isEnabled && isAccessibilityEnabled()) {
+                      showRunningNotification()
+                  }
+                  refreshScreens()
               }
           }
           EOF
 
-          # ৫. আসল APK বিল্ড করা
+          # ৫. APK কম্পাইল
           gradle assembleDebug
 
       - name: Upload Finished APK
         uses: actions/upload-artifact@v4
         with:
-          name: 047-AutoAccept-APK
+          name: mr-wow-APK
           path: app/build/outputs/apk/debug/*.apk
