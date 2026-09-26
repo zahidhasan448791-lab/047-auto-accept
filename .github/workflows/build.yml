@@ -27,7 +27,10 @@ jobs:
           # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. ম্যাকডোনাল্ডস (McDonald's) অফিসিয়াল "M" লোগো তৈরি
+          # ২. ফোল্ডার তৈরি (যাতে আর কখনো ফাইল মিসিং এরর না আসে)
+          mkdir -p app/src/main/res/drawable
+
+          # ৩. ম্যাকডোনাল্ডস (McDonald's) অফিসিয়াল লোগো ফাইল তৈরি
           cat << 'EOF' > app/src/main/res/drawable/mcdonalds_logo.xml
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp"
@@ -43,17 +46,16 @@ jobs:
           </vector>
           EOF
 
-          # ৩. থিম ও ম্যানিফেস্টে ম্যাকডোনাল্ডস আইকন যুক্ত করা
+          # ৪. শর্টকাট আইকন হিসেবে ম্যাকডোনাল্ডস লোগো সেট করা
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
-          sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
-          sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
-          sed -i 's/<application/<application android:icon="@drawable\/mcdonalds_logo" android:roundIcon="@drawable\/mcdonalds_logo"/g' app/src/main/AndroidManifest.xml || true
+          sed -i 's|@mipmap/ic_launcher_round|@drawable/mcdonalds_logo|g' app/src/main/AndroidManifest.xml || true
+          sed -i 's|@mipmap/ic_launcher|@drawable/mcdonalds_logo|g' app/src/main/AndroidManifest.xml || true
 
-          # ৪. অটোমেশন ডিফল্ট TRUE করা
+          # ৫. অটোমেশন ডিফল্ট সর্বদা ON রাখা
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # ৫. পারফেক্ট MainActivity (অন/অফ সুইচ, নিজের ছবি আপলোড ও টেস্ট বাটন সহ)
+          # ৬. অন/অফ সুইচ, ব্যাকগ্রাউন্ড ফটো ও টেস্ট বাটন সহ সম্পূর্ণ স্ক্রিন
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
@@ -110,7 +112,7 @@ jobs:
 
                   rootContainer = FrameLayout(this)
 
-                  // ব্যাকগ্রাউন্ড ইমেজ (আপনার ছবি)
+                  // ব্যাকগ্রাউন্ড ছবি
                   bgImageView = ImageView(this).apply {
                       layoutParams = FrameLayout.LayoutParams(
                           FrameLayout.LayoutParams.MATCH_PARENT,
@@ -120,7 +122,7 @@ jobs:
                   }
                   rootContainer.addView(bgImageView)
 
-                  // ডার্ক ওভারলে (লেখা পরিষ্কার দেখার জন্য)
+                  // ডার্ক গ্লাস ওভারলে
                   val overlay = View(this).apply {
                       layoutParams = FrameLayout.LayoutParams(
                           FrameLayout.LayoutParams.MATCH_PARENT,
@@ -140,29 +142,48 @@ jobs:
                   }
                   scrollView.addView(content)
 
-                  // হেডার
+                  // হেডার: ম্যাকডোনাল্ডস ব্র্যান্ডিং
                   val headerLayout = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
                       setPadding(0, 0, 0, 36)
+                  }
+                  val mcdBadge = TextView(this).apply {
+                      text = "M"
+                      setTextColor(Color.parseColor("#FFC72C"))
+                      textSize = 34f
+                      typeface = Typeface.DEFAULT_BOLD
+                      gravity = Gravity.CENTER
+                      val bg = GradientDrawable().apply {
+                          setColor(Color.parseColor("#DA291C"))
+                          cornerRadius = 24f
+                      }
+                      background = bg
+                      val lp = LinearLayout.LayoutParams(110, 110).apply { setMargins(0, 0, 30, 0) }
+                      layoutParams = lp
+                  }
+                  val titleLayout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
                   }
                   val title = TextView(this).apply {
                       text = "047 Auto Accept"
                       setTextColor(Color.WHITE)
-                      textSize = 24f
+                      textSize = 23f
                       typeface = Typeface.DEFAULT_BOLD
                   }
                   val sub = TextView(this).apply {
-                      text = "McDonald's Store 047 High-Speed Assistant"
+                      text = "McDonald's Store 047 Assistant"
                       setTextColor(Color.parseColor("#FFC72C"))
                       textSize = 13f
                       typeface = Typeface.DEFAULT_BOLD
-                      setPadding(0, 6, 0, 0)
                   }
-                  headerLayout.addView(title)
-                  headerLayout.addView(sub)
+                  titleLayout.addView(title)
+                  titleLayout.addView(sub)
+                  headerLayout.addView(mcdBadge)
+                  headerLayout.addView(titleLayout)
                   content.addView(headerLayout)
 
-                  // ছবি বদলানোর বাটন
+                  // ছবি আপলোড বাটন
                   val changePhotoBtn = Button(this).apply {
                       text = "📸 গ্যালারি থেকে ব্যাকগ্রাউন্ডে নিজের ছবি দিন"
                       setTextColor(Color.WHITE)
@@ -185,7 +206,7 @@ jobs:
                   }
                   content.addView(changePhotoBtn)
 
-                  // মাস্টার অন/অফ সুইচ
+                  // ১. মাস্টার অন/অফ সুইচ
                   val switchCard = LinearLayout(this).apply {
                       orientation = LinearLayout.HORIZONTAL
                       gravity = Gravity.CENTER_VERTICAL
@@ -207,7 +228,7 @@ jobs:
                       typeface = Typeface.DEFAULT_BOLD
                   }
                   val switchSub = TextView(this).apply {
-                      text = "চালু থাকলে ০৪৭ অর্ডার পলকে এক্সেপ্ট হবে"
+                      text = "চালু থাকলে ০৪৭ অর্ডার পলকে ক্লিক হবে"
                       setTextColor(Color.parseColor("#94A3B8"))
                       textSize = 12f
                       setPadding(0, 4, 0, 0)
@@ -235,7 +256,7 @@ jobs:
                   switchCard.addView(switchToggle)
                   content.addView(switchCard)
 
-                  // এক্সেসিবিলিটি স্ট্যাটাস কার্ড
+                  // ২. এক্সেসিবিলিটি স্ট্যাটাস কার্ড
                   val statusCard = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       setPadding(40, 36, 40, 36)
@@ -276,7 +297,7 @@ jobs:
                   statusCard.addView(btnPermission)
                   content.addView(statusCard)
 
-                  // টেস্ট বাটন
+                  // ৩. টেস্ট বাটন
                   val testBtn = Button(this).apply {
                       text = "🧪 টেস্ট করুন (Test 047 Order)"
                       setTextColor(Color.WHITE)
@@ -422,7 +443,7 @@ jobs:
           }
           EOF
 
-          # ৬. আসল APK কম্পাইল করা
+          # ৭. বিল্ড সম্পন্ন করা
           gradle assembleDebug
 
       - name: Upload Finished APK
