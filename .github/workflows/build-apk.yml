@@ -22,15 +22,17 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build mr.wow Official APK
+      - name: Build mr.wow with Swipe Engine
         run: |
           # ১. আসল জিপ আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. অ্যাপের নাম পরিবর্তন করে mr.wow করা
+          # ২. অ্যাপ নাম ও থিম ফিক্স
           sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">mr.wow<\/string>/g' app/src/main/res/values/strings.xml || true
+          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
+          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
 
-          # ৩. মোবাইলের হোমস্ক্রিনের জন্য ম্যাকডোনাল্ডসের গোল্ডেন "M" লোগো তৈরি
+          # ৩. ম্যাকডোনাল্ডস আইকন সেটআপ
           mkdir -p app/src/main/res/mipmap-anydpi-v26
           mkdir -p app/src/main/res/drawable
 
@@ -76,15 +78,147 @@ jobs:
           </adaptive-icon>
           EOF
 
-          # ৪. থিম ও নোটিফিকেশন পারমিশন ফিক্স
-          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
-          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
-          sed -i 's/<manifest[^>]*>/&\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/>/' app/src/main/AndroidManifest.xml || true
+          # ৪. অটোমেশন ইঞ্জিন আপডেট: সোয়াইপ (Swipe Gesture) লজিক যুক্ত করা
+          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/engine/AutomationEngine.kt
+          package com.autoaccept.store047.engine
 
-          # ৫. ডিফল্ট অটোমেশন সর্বদা TRUE
-          sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
+          import android.accessibilityservice.AccessibilityService
+          import android.accessibilityservice.GestureDescription
+          import android.graphics.Path
+          import android.graphics.Rect
+          import android.view.accessibility.AccessibilityNodeInfo
+          import android.widget.Toast
+          import kotlinx.coroutines.CoroutineScope
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.launch
 
-          # ৬. পারফেক্ট mr.wow MainActivity (Jetpack Compose + নোটিফিকেশন সাপোর্ট)
+          object AutomationEngine {
+
+              private var lastProcessedTime: Long = 0
+
+              fun processWindow(service: AccessibilityService, rootNode: AccessibilityNodeInfo?) {
+                  if (rootNode == null) return
+
+                  val currentTime = System.currentTimeMillis()
+                  if (currentTime - lastProcessedTime < 2500) return
+
+                  val allTexts = mutableListOf<String>()
+                  collectTexts(rootNode, allTexts)
+                  val combined = allTexts.joinToString(" ").lowercase()
+
+                  val hasStore047 = combined.contains("047") || combined.contains("store 047") || combined.contains("branch 047")
+
+                  if (hasStore047) {
+                      val acceptNode = findAcceptNode(rootNode)
+                      if (acceptNode != null) {
+                          lastProcessedTime = currentTime
+                          val rect = Rect()
+                          acceptNode.getBoundsInScreen(rect)
+
+                          // ১. যদি সোয়াইপ বাটন হয় তবে সরাসরি বাম থেকে ডানে সোয়াইপ করবে
+                          performSwipe(service, rect)
+
+                          // ২. সাথে নরমাল ক্লিকও ট্রিগার করবে যাতে কোনোভাবেই মিস না হয়
+                          try {
+                              acceptNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                          } catch (e: Exception) {}
+
+                          CoroutineScope(Dispatchers.Main).launch {
+                              Toast.makeText(service, "⚡ mr.wow: Store 047 Swiped & Accepted!", Toast.LENGTH_SHORT).show()
+                          }
+                      } else {
+                          // স্ক্রিনে এক্সেপ্ট লেখা বাটন না পেলেও স্ক্রিনের নিচের দিকে সোয়াইপ চালাবে
+                          val displayMetrics = service.resources.displayMetrics
+                          val screenWidth = displayMetrics.widthPixels
+                          val screenHeight = displayMetrics.heightPixels
+
+                          val fallbackRect = Rect(
+                              (screenWidth * 0.1).toInt(),
+                              (screenHeight * 0.75).toInt(),
+                              (screenWidth * 0.9).toInt(),
+                              (screenHeight * 0.88).toInt()
+                          )
+                          lastProcessedTime = currentTime
+                          performSwipe(service, fallbackRect)
+                      }
+                  }
+              }
+
+              private fun performSwipe(service: AccessibilityService, bounds: Rect) {
+                  val startX = bounds.left.toFloat() + (bounds.width() * 0.15f)
+                  val endX = bounds.right.toFloat() - (bounds.width() * 0.10f)
+                  val centerY = bounds.centerY().toFloat()
+
+                  val swipePath = Path().apply {
+                      moveTo(startX, centerY)
+                      lineTo(endX, centerY)
+                  }
+
+                  val gesture = GestureDescription.Builder()
+                      .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 200))
+                      .build()
+
+                  service.dispatchGesture(gesture, null, null)
+              }
+
+              private fun findAcceptNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+                  val text = (node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")
+                  val lower = text.lowercase()
+
+                  if (lower.contains("accept") || lower.contains("swipe") || lower.contains("slide") || lower.contains("take") || lower.contains("match")) {
+                      return node
+                  }
+
+                  for (i in 0 until node.childCount) {
+                      val child = node.getChild(i) ?: continue
+                      val found = findAcceptNode(child)
+                      if (found != null) return found
+                  }
+                  return null
+              }
+
+              private fun collectTexts(node: AccessibilityNodeInfo, list: MutableList<String>) {
+                  node.text?.let { list.add(it.toString()) }
+                  node.contentDescription?.let { list.add(it.toString()) }
+                  for (i in 0 until node.childCount) {
+                      val child = node.getChild(i) ?: continue
+                      collectTexts(child, list)
+                  }
+              }
+          }
+          EOF
+
+          # ৫. Accessibility Service-এ AutomationEngine কল যুক্ত করা
+          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/service/AutoAcceptAccessibilityService.kt
+          package com.autoaccept.store047.service
+
+          import android.accessibilityservice.AccessibilityService
+          import android.view.accessibility.AccessibilityEvent
+          import com.autoaccept.store047.data.PreferencesManager
+          import com.autoaccept.store047.engine.AutomationEngine
+
+          class AutoAcceptAccessibilityService : AccessibilityService() {
+
+              private lateinit var prefs: PreferencesManager
+
+              override fun onServiceConnected() {
+                  super.onServiceConnected()
+                  prefs = PreferencesManager.getInstance(this)
+              }
+
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+                  if (event == null) return
+                  if (!prefs.isAutomationEnabled.value) return
+
+                  val root = rootInActiveWindow ?: return
+                  AutomationEngine.processWindow(this, root)
+              }
+
+              override fun onInterrupt() {}
+          }
+          EOF
+
+          # ৬. পারফেক্ট MainActivity ও UI
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
@@ -232,7 +366,7 @@ jobs:
                       val builder = NotificationCompat.Builder(this, CHANNEL_ID)
                           .setSmallIcon(android.R.drawable.stat_notify_sync)
                           .setContentTitle("mr.wow - Active & Running")
-                          .setContentText("Monitoring Store 047 orders in real-time.")
+                          .setContentText("Auto-Swipe active for Store 047.")
                           .setPriority(NotificationCompat.PRIORITY_MAX)
                           .setOngoing(true)
                           .setSilent(true)
@@ -280,7 +414,7 @@ jobs:
                   )
                   Spacer(modifier = Modifier.height(16.dp))
                   Text(
-                      text = "mr.wow needs Accessibility Service permission to auto-accept Store 047 orders.\n\nOnce enabled, this setup screen will disappear permanently.",
+                      text = "mr.wow needs Accessibility Service permission to auto-swipe Store 047 orders.\n\nOnce enabled, this setup screen will disappear permanently.",
                       color = Color(0xFF94A3B8),
                       fontSize = 14.sp,
                       textAlign = TextAlign.Center
@@ -315,7 +449,7 @@ jobs:
                       fontWeight = FontWeight.Bold
                   )
                   Text(
-                      text = "Store 047 High-Speed Assistant",
+                      text = "Store 047 Auto-Swipe Assistant",
                       color = Color(0xFF38BDF8),
                       fontSize = 14.sp,
                       fontWeight = FontWeight.Medium
@@ -342,9 +476,9 @@ jobs:
                           Spacer(modifier = Modifier.height(8.dp))
                           Text(
                               text = if (isEnabled)
-                                  "Auto-accept is active and monitoring Store 047 orders."
+                                  "Auto-Swipe is active: 047 orders will be automatically swiped!"
                               else
-                                  "Service is paused. No auto-clicks will happen.",
+                                  "Service is paused. No auto-swipes will happen.",
                               color = if (isEnabled) Color(0xFF86EFAC) else Color(0xFFFCA5A5),
                               fontSize = 13.sp,
                               textAlign = TextAlign.Center
