@@ -22,31 +22,25 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build Clean APK
+      - name: Build APK
         run: |
-          # ১. আসল জিপ আনজিপ
+          # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. অ্যাপ নাম ও থিম ফিক্স (যা সফল বিল্ডে কাজ করেছিল)
-          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">mr.wow<\/string>/g' app/src/main/res/values/strings.xml || true
+          # ২. শুধুমাত্র থিম নেম ফিক্স (যা বিল্ড #৬ এ সফল হয়েছিল)
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
-
-          # ৩. মিসিং আইকন দূর করা
           sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
 
-          # ৪. অ্যাক্সেসিবিলিটি ফাইলে সোয়াইপ পারমিশন নিশ্চিত করা (কোড স্পর্শ না করে)
-          sed -i 's/<accessibility-service/& android:canPerformGestures="true"/' app/src/main/res/xml/*.xml || true
-
-          # ৫. ডিফল্ট অটোমেশন সর্বদা TRUE
+          # ৩. ডিফল্ট অটোমেশন সর্বদা অন রাখা
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # ৬. সরাসরি অরিজিনাল কোড কম্পাইল করা
+          # ৪. আসল APK তৈরি করা
           gradle assembleDebug
 
       - name: Upload Finished APK
         uses: actions/upload-artifact@v4
         with:
-          name: mr-wow-APK
+          name: 047-AutoAccept-APK
           path: app/build/outputs/apk/debug/*.apk
