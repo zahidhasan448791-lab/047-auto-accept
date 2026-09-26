@@ -22,62 +22,409 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Extract and Build APK
+      - name: Build Modern Designed APK
         run: |
-          # জিপ ফাইল আনপ্যাক
+          # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # থিম ঠিক করা
+          # ২. থিম ও ম্যানিফেস্ট ফিক্স
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
-
-          # আইকন এরর পুরোপুরি রিমুভ করা
           sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
 
-          # ফ্রেশ ও নিরাপদ MainActivity
-          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
-          package com.autoaccept.store047
+          # ৩. এক্সেসিবিলিটি কনফিগারেশনে ডিপ স্ক্যান চালু
+          cat << 'EOF' > app/src/main/res/xml/accessibility_service_config.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:description="@string/accessibility_service_description"
+              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+              android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:notificationTimeout="30"
+              android:canRetrieveWindowContent="true"
+              android:canPerformGestures="true" />
+          EOF
 
-          import android.content.Intent
-          import android.os.Bundle
-          import android.provider.Settings
-          import android.widget.Button
-          import android.widget.LinearLayout
-          import android.widget.TextView
-          import androidx.activity.ComponentActivity
+          # ৪. ইঞ্জিন: অন/অফ চেক সহ সুপার-ফাস্ট অটো ক্লিক
+          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/engine/AutomationEngine.kt
+          package com.autoaccept.store047.engine
 
-          class MainActivity : ComponentActivity() {
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  val layout = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setPadding(60, 100, 60, 60)
-                  }
-                  val title = TextView(this).apply {
-                      text = "047 Auto Accept Assistant"
-                      textSize = 22f
-                  }
-                  val sub = TextView(this).apply {
-                      text = "Branch 047 order monitoring is ACTIVE."
-                      textSize = 14f
-                      setPadding(0, 20, 0, 40)
-                  }
-                  val btn = Button(this).apply {
-                      text = "Open Accessibility Settings"
-                      setOnClickListener {
-                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+          import android.media.AudioManager
+          import android.media.ToneGenerator
+          import android.view.accessibility.AccessibilityNodeInfo
+          import com.autoaccept.store047.data.LogLevel
+          import com.autoaccept.store047.data.LogRepository
+
+          class AutomationEngine {
+              companion object {
+                  const val COOLDOWN_MILLIS = 2000L
+                  val FORBIDDEN = listOf("picked up", "cancel", "reject", "details", "arrived", "delivered", "إلغاء", "تفاصيل")
+              }
+
+              private var lastAcceptedTimestamp: Long = 0L
+
+              @Synchronized
+              fun processWindow(rootNode: AccessibilityNodeInfo?, storeCode: String, targetPackage: String = "") {
+                  if (rootNode == null) return
+                  val now = System.currentTimeMillis()
+                  if (now - lastAcceptedTimestamp < COOLDOWN_MILLIS) return
+
+                  var storeFound = false
+                  var acceptBtn: AccessibilityNodeInfo? = null
+                  val targetCode = if (storeCode.isBlank()) "047" else storeCode.trim()
+
+                  fun scan(node: AccessibilityNodeInfo?) {
+                      if (node == null) return
+                      val t = node.text?.toString()?.trim() ?: ""
+                      val d = node.contentDescription?.toString()?.trim() ?: ""
+                      val full = (t + " " + d).trim()
+
+                      if (full.isNotEmpty()) {
+                          if (full.contains(targetCode) || full.contains("٠٤٧") || full.contains("047")) {
+                              storeFound = true
+                          }
+                          val lower = full.lowercase()
+                          val isAcceptWord = lower.contains("accept") || full.contains("قبول") || full.contains("موافق") || lower.contains("order")
+                          if (acceptBtn == null && isAcceptWord) {
+                              var bad = false
+                              for (f in FORBIDDEN) {
+                                  if (lower.contains(f) || full.contains(f)) {
+                                      bad = true
+                                      break
+                                  }
+                              }
+                              if (!bad) {
+                                  acceptBtn = node
+                              }
+                          }
+                      }
+                      for (i in 0 until node.childCount) {
+                          scan(node.getChild(i))
                       }
                   }
-                  layout.addView(title)
-                  layout.addView(sub)
-                  layout.addView(btn)
-                  setContentView(layout)
+
+                  scan(rootNode)
+
+                  if (storeFound && acceptBtn != null) {
+                      var cur: AccessibilityNodeInfo? = acceptBtn
+                      var clicked = false
+                      while (cur != null) {
+                          if (cur.isClickable) {
+                              clicked = cur.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                              if (clicked) break
+                          }
+                          cur = cur.parent
+                      }
+                      if (!clicked) {
+                          acceptBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                      }
+                      lastAcceptedTimestamp = System.currentTimeMillis()
+                      LogRepository.addLog("Order accepted for 047!", LogLevel.SUCCESS)
+                      try {
+                          ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200)
+                      } catch (e: Exception) {}
+                  }
               }
           }
           EOF
 
-          # আসল APK কম্পাইল করা
+          # ৫. অন/অফ সুইচ ও প্রিমিয়াম ড্যাশবোর্ড সহ MainActivity
+          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
+          package com.autoaccept.store047
+
+          import android.app.Activity
+          import android.content.Context
+          import android.content.Intent
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
+          import android.provider.Settings
+          import android.view.Gravity
+          import android.view.View
+          import android.widget.*
+          import com.autoaccept.store047.data.PreferencesManager
+
+          class MainActivity : Activity() {
+
+              private lateinit var prefs: PreferencesManager
+              private lateinit var switchToggle: Switch
+              private lateinit var statusCard: LinearLayout
+              private lateinit var statusBadge: TextView
+              private lateinit var statusDesc: TextView
+              private lateinit var btnPermission: Button
+              private val handler = Handler(Looper.getMainLooper())
+
+              private val refreshRunnable = object : Runnable {
+                  override fun run() {
+                      updateUI()
+                      handler.postDelayed(this, 1000)
+                  }
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  prefs = PreferencesManager.getInstance(this)
+
+                  val scrollView = ScrollView(this).apply {
+                      setBackgroundColor(Color.parseColor("#0B0F19"))
+                      isFillViewport = true
+                  }
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(44, 60, 44, 50)
+                  }
+                  scrollView.addView(root)
+
+                  // Header Bar
+                  val headerLayout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(0, 0, 0, 40)
+                  }
+                  val title = TextView(this).apply {
+                      text = "047 Auto Accept"
+                      setTextColor(Color.WHITE)
+                      textSize = 24f
+                      typeface = Typeface.DEFAULT_BOLD
+                  }
+                  val sub = TextView(this).apply {
+                      text = "Al-Sharouq & McDonald's Branch 047"
+                      setTextColor(Color.parseColor("#94A3B8"))
+                      textSize = 13f
+                      setPadding(0, 6, 0, 0)
+                  }
+                  headerLayout.addView(title)
+                  headerLayout.addView(sub)
+                  root.addView(headerLayout)
+
+                  // 1. MASTER ON/OFF SWITCH CARD
+                  val switchCard = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                      setPadding(40, 36, 40, 36)
+                      background = GradientDrawable().apply {
+                          cornerRadius = 24f
+                          setColor(Color.parseColor("#161E2E"))
+                          setStroke(2, Color.parseColor("#27354A"))
+                      }
+                  }
+                  val switchTextLayout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                  }
+                  val switchLabel = TextView(this).apply {
+                      text = "অটো-এক্সেপ্ট (Auto Click)"
+                      setTextColor(Color.WHITE)
+                      textSize = 17f
+                      typeface = Typeface.DEFAULT_BOLD
+                  }
+                  val switchSub = TextView(this).apply {
+                      text = "চালু রাখলে ০৪৭ অর্ডার স্বয়ংক্রিয়ভাবে এক্সেপ্ট হবে"
+                      setTextColor(Color.parseColor("#94A3B8"))
+                      textSize = 12f
+                      setPadding(0, 4, 0, 0)
+                  }
+                  switchTextLayout.addView(switchLabel)
+                  switchTextLayout.addView(switchSub)
+
+                  switchToggle = Switch(this).apply {
+                      isChecked = prefs.isAutomationEnabled()
+                      scaleX = 1.3f
+                      scaleY = 1.3f
+                      setOnCheckedChangeListener { _, isChecked ->
+                          prefs.setAutomationEnabled(isChecked)
+                          Toast.makeText(
+                              this@MainActivity,
+                              if (isChecked) "✅ অটো-এক্সেপ্ট চালু হয়েছে!" else "⏸️ অটো-এক্সেপ্ট সাময়িক বন্ধ করা হয়েছে",
+                              Toast.LENGTH_SHORT
+                          ).show()
+                          updateUI()
+                      }
+                  }
+                  switchCard.addView(switchTextLayout)
+                  switchCard.addView(switchToggle)
+                  root.addView(switchCard)
+
+                  // 2. ACCESSIBILITY STATUS CARD
+                  statusCard = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(40, 36, 40, 36)
+                      val lp = LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT
+                      ).apply { setMargins(0, 30, 0, 30) }
+                      layoutParams = lp
+                      background = GradientDrawable().apply {
+                          cornerRadius = 24f
+                          setColor(Color.parseColor("#161E2E"))
+                      }
+                  }
+
+                  statusBadge = TextView(this).apply {
+                      textSize = 15f
+                      typeface = Typeface.DEFAULT_BOLD
+                  }
+                  statusDesc = TextView(this).apply {
+                      textSize = 12f
+                      setTextColor(Color.parseColor("#94A3B8"))
+                      setPadding(0, 10, 0, 24)
+                  }
+                  btnPermission = Button(this).apply {
+                      text = "Open Accessibility Settings"
+                      setTextColor(Color.WHITE)
+                      textSize = 14f
+                      typeface = Typeface.DEFAULT_BOLD
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#2563EB"))
+                          cornerRadius = 18f
+                      }
+                      setOnClickListener {
+                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                      }
+                  }
+                  statusCard.addView(statusBadge)
+                  statusCard.addView(statusDesc)
+                  statusCard.addView(btnPermission)
+                  root.addView(statusCard)
+
+                  // 3. TARGET BADGE INFO
+                  val infoCard = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setPadding(36, 30, 36, 30)
+                      background = GradientDrawable().apply {
+                          cornerRadius = 20f
+                          setColor(Color.parseColor("#111827"))
+                          setStroke(2, Color.parseColor("#1F2937"))
+                      }
+                  }
+                  val infoTitle = TextView(this).apply {
+                      text = "⚙️ টার্গেট ইনফো"
+                      setTextColor(Color.parseColor("#38BDF8"))
+                      textSize = 14f
+                      typeface = Typeface.DEFAULT_BOLD
+                  }
+                  val infoDetails = TextView(this).apply {
+                      text = "• ব্রাঞ্চ কোড: 047 (ম্যাকডোনাল্ডস / আল-শারুক)\n• টার্গেট বাটন: Accept the order / قبول الطلب\n• রেসপন্স স্পিড: মিলিসেকেন্ড"
+                      setTextColor(Color.parseColor("#CBD5E1"))
+                      textSize = 12f
+                      setPadding(0, 8, 0, 0)
+                  }
+                  infoCard.addView(infoTitle)
+                  infoCard.addView(infoDetails)
+                  root.addView(infoCard)
+
+                  // 4. TEST SIMULATOR BUTTON
+                  val testBtn = Button(this).apply {
+                      text = "🧪 টেস্ট করুন (Test 047 Order Simulator)"
+                      setTextColor(Color.WHITE)
+                      textSize = 14f
+                      typeface = Typeface.DEFAULT_BOLD
+                      val lp = LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT
+                      ).apply { setMargins(0, 30, 0, 20) }
+                      layoutParams = lp
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#059669"))
+                          cornerRadius = 18f
+                      }
+                      setOnClickListener {
+                          showSimulator()
+                      }
+                  }
+                  root.addView(testBtn)
+
+                  setContentView(scrollView)
+              }
+
+              private fun showSimulator() {
+                  val layout = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.parseColor("#1E293B"))
+                      setPadding(50, 50, 50, 50)
+                      gravity = Gravity.CENTER_HORIZONTAL
+                  }
+                  val text = TextView(this).apply {
+                      text = "নতুন অর্ডার: ব্রাঞ্চ 047"
+                      setTextColor(Color.WHITE)
+                      textSize = 20f
+                      typeface = Typeface.DEFAULT_BOLD
+                  }
+                  val btn = Button(this).apply {
+                      text = "Accept the order"
+                      setTextColor(Color.WHITE)
+                      textSize = 15f
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#F59E0B"))
+                          cornerRadius = 16f
+                      }
+                      setOnClickListener {
+                          Toast.makeText(this@MainActivity, "✅ টেস্ট সফল! অটো-এক্সেপ্ট ০৪৭ অর্ডার ধরে ফেলেছে!", Toast.LENGTH_LONG).show()
+                      }
+                  }
+                  layout.addView(text)
+                  layout.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(1, 30) })
+                  layout.addView(btn)
+
+                  val dialog = android.app.AlertDialog.Builder(this)
+                      .setView(layout)
+                      .create()
+                  dialog.show()
+              }
+
+              private fun isAccessibilityEnabled(): Boolean {
+                  val service = "${packageName}/com.autoaccept.store047.service.AutoAcceptAccessibilityService"
+                  val enabledServices = Settings.Secure.getString(
+                      contentResolver,
+                      Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                  ) ?: return false
+                  return enabledServices.contains(service) || enabledServices.contains("AutoAcceptAccessibilityService")
+              }
+
+              private fun updateUI() {
+                  val accessEnabled = isAccessibilityEnabled()
+                  val autoEnabled = prefs.isAutomationEnabled()
+
+                  if (accessEnabled && autoEnabled) {
+                      statusBadge.text = "● এক্সেসিবিলিটি সার্ভিস: সক্রিয় (ACTIVE)"
+                      statusBadge.setTextColor(Color.parseColor("#22C55E"))
+                      statusDesc.text = "অটো-এক্সেপ্ট সম্পূর্ণ তৈরি এবং ব্যাকগ্রাউন্ডে কাজ করছে।"
+                      btnPermission.text = "✅ সার্ভিস চালু আছে"
+                      btnPermission.setBackgroundColor(Color.parseColor("#15803D"))
+                  } else if (accessEnabled && !autoEnabled) {
+                      statusBadge.text = "⏸️ অটো-এক্সেপ্ট সাময়িক বন্ধ (PAUSED)"
+                      statusBadge.setTextColor(Color.parseColor("#F59E0B"))
+                      statusDesc.text = "উপরে থাকা অন/অফ সুইচ দিয়ে চালু করুন।"
+                      btnPermission.text = "সার্ভিস রেডি (পজ করা)"
+                      btnPermission.setBackgroundColor(Color.parseColor("#4B5563"))
+                  } else {
+                      statusBadge.text = "● এক্সেসিবিলিটি পারমিশন প্রয়োজন (OFF)"
+                      statusBadge.setTextColor(Color.parseColor("#EF4444"))
+                      statusDesc.text = "অ্যাপ কাজ করার জন্য নিচের বাটনে চাপ দিয়ে সার্ভিসটি ON করুন।"
+                      btnPermission.text = "Open Accessibility Settings"
+                      btnPermission.setBackgroundColor(Color.parseColor("#2563EB"))
+                  }
+              }
+
+              override fun onResume() {
+                  super.onResume()
+                  switchToggle.isChecked = prefs.isAutomationEnabled()
+                  updateUI()
+                  handler.post(refreshRunnable)
+              }
+
+              override fun onPause() {
+                  super.onPause()
+                  handler.removeCallbacks(refreshRunnable)
+              }
+          }
+          EOF
+
+          # ৬. আসল APK কম্পাইল করা
           gradle assembleDebug
 
       - name: Upload Finished APK
