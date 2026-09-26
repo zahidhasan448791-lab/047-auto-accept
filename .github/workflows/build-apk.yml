@@ -22,63 +22,31 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build mr.wow with Swipe Engine
+      - name: Build mr.wow Universal APK
         run: |
-          # ১. আসল জিপ আনজিপ
+          # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. অ্যাপ নাম ও থিম ফিক্স
+          # ২. অ্যাপ নাম ও থিম
           sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">mr.wow<\/string>/g' app/src/main/res/values/strings.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
 
-          # ৩. ম্যাকডোনাল্ডস আইকন সেটআপ
-          mkdir -p app/src/main/res/mipmap-anydpi-v26
-          mkdir -p app/src/main/res/drawable
-
-          cat << 'EOF' > app/src/main/res/drawable/ic_mcd_bg.xml
+          # ৩. অ্যাক্সেসিবিলিটি কনফিগে ফুল স্ক্রিন জেসচার সক্রিয় করা
+          mkdir -p app/src/main/res/xml
+          cat << 'EOF' > app/src/main/res/xml/accessibility_service_config.xml
           <?xml version="1.0" encoding="utf-8"?>
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp"
-              android:height="108dp"
-              android:viewportWidth="108"
-              android:viewportHeight="108">
-              <path
-                  android:fillColor="#DA291C"
-                  android:pathData="M0,0h108v108h-108z"/>
-          </vector>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+              android:canPerformGestures="true"
+              android:canRetrieveWindowContent="true"
+              android:description="@string/app_name"
+              android:notificationTimeout="80" />
           EOF
 
-          cat << 'EOF' > app/src/main/res/drawable/ic_mcd_fg.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp"
-              android:height="108dp"
-              android:viewportWidth="108"
-              android:viewportHeight="108">
-              <path
-                  android:fillColor="#FFC72C"
-                  android:pathData="M24,78 C24,45 36,32 48,32 C52,32 54,37 54,44 C54,37 56,32 60,32 C72,32 84,45 84,78 L74,78 C74,48 66,40 60,40 C56,40 54,46 54,58 L54,78 L48,78 L48,58 C48,46 46,40 42,40 C36,40 28,48 28,78 Z" />
-          </vector>
-          EOF
-
-          cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@drawable/ic_mcd_bg"/>
-              <foreground android:drawable="@drawable/ic_mcd_fg"/>
-          </adaptive-icon>
-          EOF
-
-          cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@drawable/ic_mcd_bg"/>
-              <foreground android:drawable="@drawable/ic_mcd_fg"/>
-          </adaptive-icon>
-          EOF
-
-          # ৪. অটোমেশন ইঞ্জিন আপডেট: সোয়াইপ (Swipe Gesture) লজিক যুক্ত করা
+          # ৪. যেকোনো মোবাইলে স্বয়ংক্রিয় এডজাস্ট হওয়ার ইউনিভার্সাল সোয়াইপ ইঞ্জিন
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/engine/AutomationEngine.kt
           package com.autoaccept.store047.engine
 
@@ -106,56 +74,54 @@ jobs:
                   collectTexts(rootNode, allTexts)
                   val combined = allTexts.joinToString(" ").lowercase()
 
-                  val hasStore047 = combined.contains("047") || combined.contains("store 047") || combined.contains("branch 047")
+                  // ০৪৭ ব্রাঞ্চ ডিটেকশন
+                  val hasStore047 = combined.contains("047") || combined.contains("nahda") || combined.contains("6283")
 
                   if (hasStore047) {
+                      // ১. স্ক্রিন সাইজ যাই হোক না কেন সরাসরি "Accept" বাটনটির আসল অবস্থান বের করা
                       val acceptNode = findAcceptNode(rootNode)
+
                       if (acceptNode != null) {
                           lastProcessedTime = currentTime
-                          val rect = Rect()
-                          acceptNode.getBoundsInScreen(rect)
+                          val bounds = Rect()
+                          acceptNode.getBoundsInScreen(bounds)
 
-                          // ১. যদি সোয়াইপ বাটন হয় তবে সরাসরি বাম থেকে ডানে সোয়াইপ করবে
-                          performSwipe(service, rect)
+                          // বাটনটির সাইজ এবং উচ্চতা অনুযায়ী স্বয়ংক্রিয়ভাবে কোঅর্ডিনেট হিসাব
+                          val startX = bounds.left.toFloat() + (bounds.height() / 2f)
+                          val endX = bounds.right.toFloat() - (bounds.height() / 4f)
+                          val centerY = bounds.exactCenterY()
 
-                          // ২. সাথে নরমাল ক্লিকও ট্রিগার করবে যাতে কোনোভাবেই মিস না হয়
+                          performUniversalSwipe(service, startX, endX, centerY)
+
+                          // ব্যাকআপ হিসেবে সাধারণ ট্যাপও পাঠিয়ে রাখা
                           try {
                               acceptNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                           } catch (e: Exception) {}
 
                           CoroutineScope(Dispatchers.Main).launch {
-                              Toast.makeText(service, "⚡ mr.wow: Store 047 Swiped & Accepted!", Toast.LENGTH_SHORT).show()
+                              Toast.makeText(service, "⚡ mr.wow: Auto-Swiped Store 047!", Toast.LENGTH_SHORT).show()
                           }
                       } else {
-                          // স্ক্রিনে এক্সেপ্ট লেখা বাটন না পেলেও স্ক্রিনের নিচের দিকে সোয়াইপ চালাবে
-                          val displayMetrics = service.resources.displayMetrics
-                          val screenWidth = displayMetrics.widthPixels
-                          val screenHeight = displayMetrics.heightPixels
+                          // স্ক্রিন সাইজ অনুযায়ী ফলব্যাক ডায়নামিক সোয়াইপ
+                          val metrics = service.resources.displayMetrics
+                          val w = metrics.widthPixels.toFloat()
+                          val h = metrics.heightPixels.toFloat()
 
-                          val fallbackRect = Rect(
-                              (screenWidth * 0.1).toInt(),
-                              (screenHeight * 0.75).toInt(),
-                              (screenWidth * 0.9).toInt(),
-                              (screenHeight * 0.88).toInt()
-                          )
                           lastProcessedTime = currentTime
-                          performSwipe(service, fallbackRect)
+                          performUniversalSwipe(service, w * 0.12f, w * 0.88f, h * 0.52f)
                       }
                   }
               }
 
-              private fun performSwipe(service: AccessibilityService, bounds: Rect) {
-                  val startX = bounds.left.toFloat() + (bounds.width() * 0.15f)
-                  val endX = bounds.right.toFloat() - (bounds.width() * 0.10f)
-                  val centerY = bounds.centerY().toFloat()
-
+              // মানুষের আঙুলের মতো সঠিক প্রেসিং ও মুভমেন্ট নিশ্চিত করা
+              private fun performUniversalSwipe(service: AccessibilityService, startX: Float, endX: Float, y: Float) {
                   val swipePath = Path().apply {
-                      moveTo(startX, centerY)
-                      lineTo(endX, centerY)
+                      moveTo(startX, y)
+                      lineTo(endX, y)
                   }
 
                   val gesture = GestureDescription.Builder()
-                      .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 200))
+                      .addStroke(GestureDescription.StrokeDescription(swipePath, 0, 400))
                       .build()
 
                   service.dispatchGesture(gesture, null, null)
@@ -165,7 +131,7 @@ jobs:
                   val text = (node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")
                   val lower = text.lowercase()
 
-                  if (lower.contains("accept") || lower.contains("swipe") || lower.contains("slide") || lower.contains("take") || lower.contains("match")) {
+                  if (lower.contains("accept") || lower.contains("swipe") || lower.contains("slide")) {
                       return node
                   }
 
@@ -188,351 +154,7 @@ jobs:
           }
           EOF
 
-          # ৫. Accessibility Service-এ AutomationEngine কল যুক্ত করা
-          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/service/AutoAcceptAccessibilityService.kt
-          package com.autoaccept.store047.service
-
-          import android.accessibilityservice.AccessibilityService
-          import android.view.accessibility.AccessibilityEvent
-          import com.autoaccept.store047.data.PreferencesManager
-          import com.autoaccept.store047.engine.AutomationEngine
-
-          class AutoAcceptAccessibilityService : AccessibilityService() {
-
-              private lateinit var prefs: PreferencesManager
-
-              override fun onServiceConnected() {
-                  super.onServiceConnected()
-                  prefs = PreferencesManager.getInstance(this)
-              }
-
-              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-                  if (event == null) return
-                  if (!prefs.isAutomationEnabled.value) return
-
-                  val root = rootInActiveWindow ?: return
-                  AutomationEngine.processWindow(this, root)
-              }
-
-              override fun onInterrupt() {}
-          }
-          EOF
-
-          # ৬. পারফেক্ট MainActivity ও UI
-          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
-          package com.autoaccept.store047
-
-          import android.Manifest
-          import android.app.NotificationChannel
-          import android.app.NotificationManager
-          import android.app.PendingIntent
-          import android.content.Context
-          import android.content.Intent
-          import android.content.pm.PackageManager
-          import android.os.Build
-          import android.os.Bundle
-          import android.provider.Settings
-          import android.widget.Toast
-          import androidx.activity.ComponentActivity
-          import androidx.activity.compose.setContent
-          import androidx.activity.result.contract.ActivityResultContracts
-          import androidx.compose.foundation.background
-          import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.rememberScrollState
-          import androidx.compose.foundation.shape.RoundedCornerShape
-          import androidx.compose.foundation.verticalScroll
-          import androidx.compose.material3.*
-          import androidx.compose.runtime.*
-          import androidx.compose.ui.Alignment
-          import androidx.compose.ui.Modifier
-          import androidx.compose.ui.graphics.Color
-          import androidx.compose.ui.text.font.FontWeight
-          import androidx.compose.ui.text.style.TextAlign
-          import androidx.compose.ui.unit.dp
-          import androidx.compose.ui.unit.sp
-          import androidx.core.app.NotificationCompat
-          import androidx.core.content.ContextCompat
-          import com.autoaccept.store047.data.PreferencesManager
-
-          class MainActivity : ComponentActivity() {
-
-              private val CHANNEL_ID = "mr_wow_channel_high"
-              private val NOTIFICATION_ID = 47001
-              private lateinit var prefs: PreferencesManager
-
-              private val requestPermissionLauncher = registerForActivityResult(
-                  ActivityResultContracts.RequestPermission()
-              ) { isGranted: Boolean ->
-                  if (isGranted) {
-                      showRunningNotification()
-                  }
-              }
-
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
-                  prefs = PreferencesManager.getInstance(this)
-                  createNotificationChannel()
-                  askNotificationPermission()
-
-                  setContent {
-                      var hasPermission by remember { mutableStateOf(isAccessibilityEnabled()) }
-                      val isAutoEnabled by prefs.isAutomationEnabled.collectAsState(initial = true)
-
-                      LaunchedEffect(Unit) {
-                          while (true) {
-                              val current = isAccessibilityEnabled()
-                              if (current != hasPermission) {
-                                  hasPermission = current
-                              }
-                              kotlinx.coroutines.delay(1000)
-                          }
-                      }
-
-                      LaunchedEffect(isAutoEnabled, hasPermission) {
-                          if (isAutoEnabled && hasPermission) {
-                              showRunningNotification()
-                          } else {
-                              cancelRunningNotification()
-                          }
-                      }
-
-                      MaterialTheme {
-                          Surface(
-                              modifier = Modifier.fillMaxSize(),
-                              color = Color(0xFF0B0F19)
-                          ) {
-                              if (!hasPermission) {
-                                  PermissionScreen(
-                                      onOpenSettings = {
-                                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                                      }
-                                  )
-                              } else {
-                                  DashboardScreen(
-                                      isEnabled = isAutoEnabled,
-                                      onToggle = { enabled ->
-                                          prefs.setAutomationEnabled(enabled)
-                                          if (enabled) {
-                                              showRunningNotification()
-                                              Toast.makeText(this@MainActivity, "mr.wow is ACTIVE", Toast.LENGTH_SHORT).show()
-                                          } else {
-                                              cancelRunningNotification()
-                                              Toast.makeText(this@MainActivity, "mr.wow is STOPPED", Toast.LENGTH_SHORT).show()
-                                          }
-                                      }
-                                  )
-                              }
-                          }
-                      }
-                  }
-              }
-
-              private fun askNotificationPermission() {
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                      if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                          requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                      }
-                  }
-              }
-
-              private fun createNotificationChannel() {
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      val channel = NotificationChannel(
-                          CHANNEL_ID,
-                          "mr.wow Active Service",
-                          NotificationManager.IMPORTANCE_HIGH
-                      ).apply {
-                          description = "Shows real-time status of mr.wow auto accept"
-                          setShowBadge(true)
-                          lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
-                      }
-                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                      nm.createNotificationChannel(channel)
-                  }
-              }
-
-              private fun showRunningNotification() {
-                  try {
-                      val intent = Intent(this, MainActivity::class.java).apply {
-                          flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                      }
-                      val pendingIntent = PendingIntent.getActivity(
-                          this,
-                          0,
-                          intent,
-                          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                      )
-
-                      val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-                          .setSmallIcon(android.R.drawable.stat_notify_sync)
-                          .setContentTitle("mr.wow - Active & Running")
-                          .setContentText("Auto-Swipe active for Store 047.")
-                          .setPriority(NotificationCompat.PRIORITY_MAX)
-                          .setOngoing(true)
-                          .setSilent(true)
-                          .setContentIntent(pendingIntent)
-
-                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                      nm.notify(NOTIFICATION_ID, builder.build())
-                  } catch (e: Exception) {}
-              }
-
-              private fun cancelRunningNotification() {
-                  try {
-                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                      nm.cancel(NOTIFICATION_ID)
-                  } catch (e: Exception) {}
-              }
-
-              private fun isAccessibilityEnabled(): Boolean {
-                  val service = "${packageName}/com.autoaccept.store047.service.AutoAcceptAccessibilityService"
-                  val enabledServices = Settings.Secure.getString(
-                      contentResolver,
-                      Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-                  ) ?: return false
-                  return enabledServices.contains(packageName) || enabledServices.contains("AutoAcceptAccessibilityService")
-              }
-          }
-
-          @Composable
-          fun PermissionScreen(onOpenSettings: () -> Unit) {
-              Column(
-                  modifier = Modifier
-                      .fillMaxSize()
-                      .padding(32.dp),
-                  horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.Center
-              ) {
-                  Text(text = "⚡", fontSize = 60.sp)
-                  Spacer(modifier = Modifier.height(20.dp))
-                  Text(
-                      text = "Accessibility Required",
-                      color = Color.White,
-                      fontSize = 24.sp,
-                      fontWeight = FontWeight.Bold,
-                      textAlign = TextAlign.Center
-                  )
-                  Spacer(modifier = Modifier.height(16.dp))
-                  Text(
-                      text = "mr.wow needs Accessibility Service permission to auto-swipe Store 047 orders.\n\nOnce enabled, this setup screen will disappear permanently.",
-                      color = Color(0xFF94A3B8),
-                      fontSize = 14.sp,
-                      textAlign = TextAlign.Center
-                  )
-                  Spacer(modifier = Modifier.height(36.dp))
-                  Button(
-                      onClick = onOpenSettings,
-                      modifier = Modifier
-                          .fillMaxWidth()
-                          .height(56.dp),
-                      shape = RoundedCornerShape(16.dp),
-                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
-                  ) {
-                      Text(text = "ENABLE ACCESSIBILITY PERMISSION", fontWeight = FontWeight.Bold)
-                  }
-              }
-          }
-
-          @Composable
-          fun DashboardScreen(isEnabled: Boolean, onToggle: (Boolean) -> Unit) {
-              Column(
-                  modifier = Modifier
-                      .fillMaxSize()
-                      .verticalScroll(rememberScrollState())
-                      .padding(horizontal = 24.dp, vertical = 40.dp),
-                  horizontalAlignment = Alignment.CenterHorizontally
-              ) {
-                  Text(
-                      text = "mr.wow",
-                      color = Color.White,
-                      fontSize = 32.sp,
-                      fontWeight = FontWeight.Bold
-                  )
-                  Text(
-                      text = "Store 047 Auto-Swipe Assistant",
-                      color = Color(0xFF38BDF8),
-                      fontSize = 14.sp,
-                      fontWeight = FontWeight.Medium
-                  )
-                  Spacer(modifier = Modifier.height(30.dp))
-
-                  Card(
-                      modifier = Modifier.fillMaxWidth(),
-                      shape = RoundedCornerShape(20.dp),
-                      colors = CardDefaults.cardColors(containerColor = Color(0xFF161E2E))
-                  ) {
-                      Column(
-                          modifier = Modifier
-                              .fillMaxWidth()
-                              .padding(24.dp),
-                          horizontalAlignment = Alignment.CenterHorizontally
-                      ) {
-                          Text(
-                              text = if (isEnabled) "● STATUS: RUNNING (ACTIVE)" else "● STATUS: STOPPED (OFF)",
-                              color = if (isEnabled) Color(0xFF22C55E) else Color(0xFFEF4444),
-                              fontSize = 18.sp,
-                              fontWeight = FontWeight.Bold
-                          )
-                          Spacer(modifier = Modifier.height(8.dp))
-                          Text(
-                              text = if (isEnabled)
-                                  "Auto-Swipe is active: 047 orders will be automatically swiped!"
-                              else
-                                  "Service is paused. No auto-swipes will happen.",
-                              color = if (isEnabled) Color(0xFF86EFAC) else Color(0xFFFCA5A5),
-                              fontSize = 13.sp,
-                              textAlign = TextAlign.Center
-                          )
-                      }
-                  }
-
-                  Spacer(modifier = Modifier.height(28.dp))
-
-                  Row(
-                      modifier = Modifier
-                          .fillMaxWidth()
-                          .height(60.dp),
-                      horizontalArrangement = Arrangement.spacedBy(16.dp)
-                  ) {
-                      Button(
-                          onClick = { onToggle(true) },
-                          modifier = Modifier
-                              .weight(1f)
-                              .fillMaxHeight(),
-                          shape = RoundedCornerShape(16.dp),
-                          colors = ButtonDefaults.buttonColors(
-                              containerColor = if (isEnabled) Color(0xFF15803D) else Color(0xFF1E293B)
-                          )
-                      ) {
-                          Text(
-                              text = "🟢 ON (START)",
-                              fontWeight = FontWeight.Bold,
-                              color = Color.White
-                          )
-                      }
-
-                      Button(
-                          onClick = { onToggle(false) },
-                          modifier = Modifier
-                              .weight(1f)
-                              .fillMaxHeight(),
-                          shape = RoundedCornerShape(16.dp),
-                          colors = ButtonDefaults.buttonColors(
-                              containerColor = if (!isEnabled) Color(0xFFDC2626) else Color(0xFF1E293B)
-                          )
-                      ) {
-                          Text(
-                              text = "🔴 OFF (STOP)",
-                              fontWeight = FontWeight.Bold,
-                              color = Color.White
-                          )
-                      }
-                  }
-              }
-          }
-          EOF
-
-          # ৭. আসল APK কম্পাইল করা
+          # ৫. APK কম্পাইল
           gradle assembleDebug
 
       - name: Upload Finished APK
