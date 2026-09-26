@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          clean: true
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -22,22 +24,22 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build APK
+      - name: Build Fresh APK
         run: |
-          # ১. আনজিপ
-          unzip -o "*.zip" -d .
+          # ১. গিটহাবে আগে পুশ হওয়া সব পুরনো আনজিপ ফাইল সম্পূর্ণ মুছে ক্লিন করা
+          rm -rf app settings.gradle* build.gradle* gradle*
 
-          # ২. শুধুমাত্র থিম নেম ফিক্স (যা বিল্ড #৬ এ সফল হয়েছিল)
-          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
-          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
-          sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
-          sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
+          # ২. আসল জিপ ফ্রেশ আনজিপ করা
+          unzip -q -o "*.zip" -d .
 
-          # ৩. ডিফল্ট অটোমেশন সর্বদা অন রাখা
-          sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
+          # ৩. ম্যানিফেস্ট ও থিম ফিক্স (যা বিল্ড #৬ এ সফল হয়েছিল)
+          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml 2>/dev/null || true
+          sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml 2>/dev/null || true
+          sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml 2>/dev/null || true
+          sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml 2>/dev/null || true
 
-          # ৪. আসল APK তৈরি করা
-          gradle assembleDebug
+          # ৪. কোনো প্রকার কোটলিন ফাইল এডিট না করে সরাসরি ফ্রেশ বিল্ড
+          gradle clean assembleDebug --no-daemon
 
       - name: Upload Finished APK
         uses: actions/upload-artifact@v4
