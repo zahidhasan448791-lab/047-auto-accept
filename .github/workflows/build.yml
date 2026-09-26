@@ -24,114 +24,19 @@ jobs:
 
       - name: Build Modern Designed APK
         run: |
-          # আনজিপ
+          # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # থিম ও ম্যানিফেস্ট ফিক্স
+          # ২. থিম ও ম্যানিফেস্ট ফিক্স
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
 
-          # PreferencesManager ডিফল্ট TRUE করা
+          # ৩. PreferencesManager-এ ডিফল্ট অটোমেশন সর্বদা TRUE করা
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # এক্সেসিবিলিটি কনফিগারেশনে ডিপ স্ক্যান চালু
-          cat << 'EOF' > app/src/main/res/xml/accessibility_service_config.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-              android:description="@string/accessibility_service_description"
-              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
-              android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds|flagIncludeNotImportantViews"
-              android:accessibilityFeedbackType="feedbackGeneric"
-              android:notificationTimeout="30"
-              android:canRetrieveWindowContent="true"
-              android:canPerformGestures="true" />
-          EOF
-
-          # অটো-ক্লিক ইঞ্জিন (আরবি ও ইংরেজি বাটন সাপোর্ট)
-          cat << 'EOF' > app/src/main/java/com/autoaccept/store047/engine/AutomationEngine.kt
-          package com.autoaccept.store047.engine
-
-          import android.media.AudioManager
-          import android.media.ToneGenerator
-          import android.view.accessibility.AccessibilityNodeInfo
-          import com.autoaccept.store047.data.LogLevel
-          import com.autoaccept.store047.data.LogRepository
-
-          class AutomationEngine {
-              companion object {
-                  const val COOLDOWN_MILLIS = 2000L
-                  val FORBIDDEN = listOf("picked up", "cancel", "reject", "details", "arrived", "delivered", "إلغاء", "تفاصيل")
-              }
-
-              private var lastAcceptedTimestamp: Long = 0L
-
-              @Synchronized
-              fun processWindow(rootNode: AccessibilityNodeInfo, storeCode: String, targetPackage: String = "") {
-                  val now = System.currentTimeMillis()
-                  if (now - lastAcceptedTimestamp < COOLDOWN_MILLIS) return
-
-                  var storeFound = false
-                  var acceptBtn: AccessibilityNodeInfo? = null
-                  val targetCode = if (storeCode.isBlank()) "047" else storeCode.trim()
-
-                  fun scan(node: AccessibilityNodeInfo?) {
-                      if (node == null) return
-                      val t = node.text?.toString()?.trim() ?: ""
-                      val d = node.contentDescription?.toString()?.trim() ?: ""
-                      val full = (t + " " + d).trim()
-
-                      if (full.isNotEmpty()) {
-                          if (full.contains(targetCode) || full.contains("٠٤٧") || full.contains("047")) {
-                              storeFound = true
-                          }
-                          val lower = full.lowercase()
-                          val isAcceptWord = lower.contains("accept") || full.contains("قبول") || full.contains("موافق") || lower.contains("order")
-                          if (acceptBtn == null && isAcceptWord) {
-                              var bad = false
-                              for (f in FORBIDDEN) {
-                                  if (lower.contains(f) || full.contains(f)) {
-                                      bad = true
-                                      break
-                                  }
-                              }
-                              if (!bad) {
-                                  acceptBtn = node
-                              }
-                          }
-                      }
-                      for (i in 0 until node.childCount) {
-                          scan(node.getChild(i))
-                      }
-                  }
-
-                  scan(rootNode)
-
-                  if (storeFound && acceptBtn != null) {
-                      var cur: AccessibilityNodeInfo? = acceptBtn
-                      var clicked = false
-                      while (cur != null) {
-                          if (cur.isClickable) {
-                              clicked = cur.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                              if (clicked) break
-                          }
-                          cur = cur.parent
-                      }
-                      if (!clicked) {
-                          acceptBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                      }
-                      lastAcceptedTimestamp = System.currentTimeMillis()
-                      LogRepository.addLog("Order accepted for 047!", LogLevel.SUCCESS)
-                      try {
-                          ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100).startTone(ToneGenerator.TONE_PROP_BEEP, 200)
-                      } catch (e: Exception) {}
-                  }
-              }
-          }
-          EOF
-
-          # অন/অফ সুইচ ও প্রিমিয়াম ডিজাইন সহ MainActivity
+          # ৪. অন/অফ সুইচ ও রিয়েল-টাইম ড্যাশবোর্ড সহ MainActivity তৈরি
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
@@ -148,7 +53,12 @@ jobs:
           import android.provider.Settings
           import android.view.Gravity
           import android.view.View
-          import android.widget.*
+          import android.widget.Button
+          import android.widget.LinearLayout
+          import android.widget.ScrollView
+          import android.widget.Switch
+          import android.widget.TextView
+          import android.widget.Toast
           import com.autoaccept.store047.data.PreferencesManager
 
           class MainActivity : Activity() {
@@ -194,7 +104,7 @@ jobs:
                       typeface = Typeface.DEFAULT_BOLD
                   }
                   val sub = TextView(this).apply {
-                      text = "Branch 047 High-Speed Assistant"
+                      text = "Branch 047 Assistant"
                       setTextColor(Color.parseColor("#94A3B8"))
                       textSize = 13f
                       setPadding(0, 6, 0, 0)
@@ -224,7 +134,7 @@ jobs:
                       typeface = Typeface.DEFAULT_BOLD
                   }
                   val switchSub = TextView(this).apply {
-                      text = "চালু থাকলে ০৪৭ অর্ডার নিজে থেকেই এক্সেপ্ট হবে"
+                      text = "চালু থাকলে ০৪৭ অর্ডার স্বয়ংক্রিয়ভাবে ক্লিক হবে"
                       setTextColor(Color.parseColor("#94A3B8"))
                       textSize = 12f
                       setPadding(0, 4, 0, 0)
@@ -232,8 +142,11 @@ jobs:
                   switchTextLayout.addView(switchLabel)
                   switchTextLayout.addView(switchSub)
 
+                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
+                  val initialEnabled = sp.getBoolean("key_automation_enabled", true)
+
                   switchToggle = Switch(this).apply {
-                      isChecked = prefs.isAutomationEnabled.value
+                      isChecked = initialEnabled
                       scaleX = 1.2f
                       scaleY = 1.2f
                       setOnCheckedChangeListener { _, isChecked ->
@@ -385,32 +298,43 @@ jobs:
 
               private fun updateUI() {
                   val accessEnabled = isAccessibilityEnabled()
-                  val autoEnabled = prefs.isAutomationEnabled.value
+                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
+                  val autoEnabled = sp.getBoolean("key_automation_enabled", true)
 
                   if (accessEnabled && autoEnabled) {
                       statusBadge.text = "● এক্সেসিবিলিটি সার্ভিস: সক্রিয় (ACTIVE)"
                       statusBadge.setTextColor(Color.parseColor("#22C55E"))
                       statusDesc.text = "অটো-এক্সেপ্ট সম্পূর্ণ তৈরি এবং ব্যাকগ্রাউন্ডে কাজ করছে।"
                       btnPermission.text = "সার্ভিস চালু আছে"
-                      btnPermission.setBackgroundColor(Color.parseColor("#15803D"))
+                      btnPermission.background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#15803D"))
+                          cornerRadius = 18f
+                      }
                   } else if (accessEnabled && !autoEnabled) {
                       statusBadge.text = "অটো-এক্সেপ্ট বন্ধ (PAUSED)"
                       statusBadge.setTextColor(Color.parseColor("#F59E0B"))
                       statusDesc.text = "উপরে থাকা অন/অফ সুইচ দিয়ে চালু করুন।"
                       btnPermission.text = "সার্ভিস রেডি (পজ করা)"
-                      btnPermission.setBackgroundColor(Color.parseColor("#4B5563"))
+                      btnPermission.background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#4B5563"))
+                          cornerRadius = 18f
+                      }
                   } else {
                       statusBadge.text = "● এক্সেসিবিলিটি পারমিশন প্রয়োজন (OFF)"
                       statusBadge.setTextColor(Color.parseColor("#EF4444"))
                       statusDesc.text = "অ্যাপ কাজ করার জন্য নিচের বাটনে চাপ দিয়ে সার্ভিসটি ON করুন।"
                       btnPermission.text = "Open Accessibility Settings"
-                      btnPermission.setBackgroundColor(Color.parseColor("#2563EB"))
+                      btnPermission.background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#2563EB"))
+                          cornerRadius = 18f
+                      }
                   }
               }
 
               override fun onResume() {
                   super.onResume()
-                  switchToggle.isChecked = prefs.isAutomationEnabled.value
+                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
+                  switchToggle.isChecked = sp.getBoolean("key_automation_enabled", true)
                   updateUI()
                   handler.post(refreshRunnable)
               }
@@ -422,7 +346,7 @@ jobs:
           }
           EOF
 
-          # বিল্ড সম্পন্ন করা
+          # ৫. আসল APK কম্পাইল করা
           gradle assembleDebug
 
       - name: Upload Finished APK
