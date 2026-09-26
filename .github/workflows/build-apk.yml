@@ -30,80 +30,117 @@ jobs:
           # ২. অ্যাপের নাম পরিবর্তন করে mr.wow করা
           sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">mr.wow<\/string>/g' app/src/main/res/values/strings.xml || true
 
-          # ৩. থিম ও ম্যানিফেস্ট ফিক্স (আইকন এরর দূর করা)
+          # ৩. থিম ও ম্যানিফেস্ট ফিক্স
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
 
-          # ৪. ডিফল্ট অটোমেশন সর্বদা TRUE রাখা
+          # ৪. ডিফল্ট অটোমেশন সর্বদা TRUE
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # ৫. নিখুঁত mr.wow MainActivity (সোর্স কোডের অরিজিনাল আর্কিটেকচার অনুযায়ী তৈরি)
+          # ৫. নিখুঁত Jetpack Compose MainActivity (আপনার প্রজেক্টের সাথে ১০০% ম্যাচিং)
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
-          import android.app.AlertDialog
           import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.PendingIntent
           import android.content.Context
           import android.content.Intent
-          import android.graphics.Color
-          import android.graphics.Typeface
-          import android.graphics.drawable.GradientDrawable
           import android.os.Build
           import android.os.Bundle
           import android.provider.Settings
-          import android.view.Gravity
-          import android.view.View
-          import android.widget.Button
-          import android.widget.FrameLayout
-          import android.widget.LinearLayout
-          import android.widget.ScrollView
-          import android.widget.TextView
           import android.widget.Toast
-          import androidx.appcompat.app.AppCompatActivity
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.verticalScroll
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
           import androidx.core.app.NotificationCompat
           import com.autoaccept.store047.data.PreferencesManager
 
-          class MainActivity : AppCompatActivity() {
+          class MainActivity : ComponentActivity() {
 
               private val CHANNEL_ID = "mr_wow_channel"
               private val NOTIFICATION_ID = 47001
-
               private lateinit var prefs: PreferencesManager
-              private lateinit var container: FrameLayout
-              private lateinit var statusText: TextView
-              private lateinit var statusDesc: TextView
-              private lateinit var btnOn: Button
-              private lateinit var btnOff: Button
-              private var isEnabled = true
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   prefs = PreferencesManager.getInstance(this)
                   createNotificationChannel()
 
-                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
-                  isEnabled = sp.getBoolean("key_automation_enabled", true)
-                  prefs.setAutomationEnabled(isEnabled)
+                  setContent {
+                      var hasPermission by remember { mutableStateOf(isAccessibilityEnabled()) }
+                      val isAutoEnabled by prefs.isAutomationEnabled.collectAsState(initial = true)
 
-                  if (isEnabled && isAccessibilityEnabled()) {
-                      showRunningNotification()
+                      LaunchedEffect(Unit) {
+                          while (true) {
+                              val current = isAccessibilityEnabled()
+                              if (current != hasPermission) {
+                                  hasPermission = current
+                              }
+                              kotlinx.coroutines.delay(1000)
+                          }
+                      }
+
+                      LaunchedEffect(isAutoEnabled, hasPermission) {
+                          if (isAutoEnabled && hasPermission) {
+                              showRunningNotification()
+                          } else {
+                              cancelRunningNotification()
+                          }
+                      }
+
+                      MaterialTheme {
+                          Surface(
+                              modifier = Modifier.fillMaxSize(),
+                              color = Color(0xFF0B0F19)
+                          ) {
+                              if (!hasPermission) {
+                                  PermissionScreen(
+                                      onOpenSettings = {
+                                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                      }
+                                  )
+                              } else {
+                                  DashboardScreen(
+                                      isEnabled = isAutoEnabled,
+                                      onToggle = { enabled ->
+                                          prefs.setAutomationEnabled(enabled)
+                                          Toast.makeText(
+                                              this@MainActivity,
+                                              if (enabled) "mr.wow is ACTIVE" else "mr.wow is STOPPED",
+                                              Toast.LENGTH_SHORT
+                                          ).show()
+                                      }
+                                  )
+                              }
+                          }
+                      }
                   }
-
-                  container = FrameLayout(this)
-                  setContentView(container)
-                  refreshScreens()
               }
 
               private fun createNotificationChannel() {
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      val name = "mr.wow Service Status"
-                      val descriptionText = "Running status of mr.wow"
-                      val channel = NotificationChannel(CHANNEL_ID, name, NotificationManager.IMPORTANCE_LOW).apply {
-                          description = descriptionText
+                      val channel = NotificationChannel(
+                          CHANNEL_ID,
+                          "mr.wow Status",
+                          NotificationManager.IMPORTANCE_LOW
+                      ).apply {
+                          description = "Status of mr.wow auto accept"
                           setShowBadge(false)
                       }
                       val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -144,293 +181,148 @@ jobs:
               }
 
               private fun isAccessibilityEnabled(): Boolean {
-                  val service = "${packageName}/com.autoaccept.store047.service.AutoAcceptAccessibilityService"
                   val enabledServices = Settings.Secure.getString(
                       contentResolver,
                       Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
                   ) ?: return false
                   return enabledServices.contains(packageName) || enabledServices.contains("AutoAcceptAccessibilityService")
               }
+          }
 
-              private fun refreshScreens() {
-                  container.removeAllViews()
-                  if (!isAccessibilityEnabled()) {
-                      container.addView(createPermissionPage())
-                  } else {
-                      container.addView(createDashboardPage())
+          @Composable
+          fun PermissionScreen(onOpenSettings: () -> Unit) {
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(32.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.Center
+              ) {
+                  Text(text = "⚡", fontSize = 60.sp)
+                  Spacer(modifier = Modifier.height(20.dp))
+                  Text(
+                      text = "Accessibility Required",
+                      color = Color.White,
+                      fontSize = 24.sp,
+                      fontWeight = FontWeight.Bold,
+                      textAlign = TextAlign.Center
+                  )
+                  Spacer(modifier = Modifier.height(16.dp))
+                  Text(
+                      text = "mr.wow needs Accessibility Service permission to auto-accept Store 047 orders.\n\nOnce enabled, this setup screen will disappear permanently.",
+                      color = Color(0xFF94A3B8),
+                      fontSize = 14.sp,
+                      textAlign = TextAlign.Center
+                  )
+                  Spacer(modifier = Modifier.height(36.dp))
+                  Button(
+                      onClick = onOpenSettings,
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .height(56.dp),
+                      shape = RoundedCornerShape(16.dp),
+                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                  ) {
+                      Text(text = "ENABLE ACCESSIBILITY PERMISSION", fontWeight = FontWeight.Bold)
                   }
               }
+          }
 
-              private fun createPermissionPage(): View {
-                  val layout = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setBackgroundColor(Color.parseColor("#0B0F19"))
-                      setPadding(48, 120, 48, 60)
-                      gravity = Gravity.CENTER_HORIZONTAL
-                  }
+          @Composable
+          fun DashboardScreen(isEnabled: Boolean, onToggle: (Boolean) -> Unit) {
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .verticalScroll(rememberScrollState())
+                      .padding(horizontal = 24.dp, vertical = 40.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally
+              ) {
+                  Text(
+                      text = "mr.wow",
+                      color = Color.White,
+                      fontSize = 32.sp,
+                      fontWeight = FontWeight.Bold
+                  )
+                  Text(
+                      text = "Store 047 High-Speed Assistant",
+                      color = Color(0xFF38BDF8),
+                      fontSize = 14.sp,
+                      fontWeight = FontWeight.Medium
+                  )
+                  Spacer(modifier = Modifier.height(30.dp))
 
-                  val icon = TextView(this).apply {
-                      text = "⚡"
-                      textSize = 50f
-                      gravity = Gravity.CENTER
-                      setPadding(0, 0, 0, 24)
-                  }
-                  layout.addView(icon)
-
-                  val title = TextView(this).apply {
-                      text = "Permission Required"
-                      setTextColor(Color.WHITE)
-                      textSize = 21f
-                      typeface = Typeface.DEFAULT_BOLD
-                      gravity = Gravity.CENTER
-                  }
-                  layout.addView(title)
-
-                  val desc = TextView(this).apply {
-                      text = "mr.wow needs Accessibility Service permission to auto-accept Store 047 orders.\n\nOnce enabled, this setup screen will never appear again."
-                      setTextColor(Color.parseColor("#94A3B8"))
-                      textSize = 14f
-                      gravity = Gravity.CENTER
-                      setPadding(0, 16, 0, 50)
-                  }
-                  layout.addView(desc)
-
-                  val btn = Button(this).apply {
-                      text = "ENABLE ACCESSIBILITY PERMISSION"
-                      setTextColor(Color.WHITE)
-                      textSize = 14f
-                      typeface = Typeface.DEFAULT_BOLD
-                      background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#2563EB"))
-                          cornerRadius = 20f
-                      }
-                      layoutParams = LinearLayout.LayoutParams(
-                          LinearLayout.LayoutParams.MATCH_PARENT,
-                          140
-                      )
-                      setOnClickListener {
-                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                      }
-                  }
-                  layout.addView(btn)
-                  return layout
-              }
-
-              private fun createDashboardPage(): View {
-                  val scrollView = ScrollView(this).apply {
-                      setBackgroundColor(Color.parseColor("#0B0F19"))
-                      isFillViewport = true
-                  }
-
-                  val root = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setPadding(44, 70, 44, 50)
-                      gravity = Gravity.CENTER_HORIZONTAL
-                  }
-                  scrollView.addView(root)
-
-                  val title = TextView(this).apply {
-                      text = "mr.wow"
-                      setTextColor(Color.WHITE)
-                      textSize = 30f
-                      typeface = Typeface.DEFAULT_BOLD
-                      gravity = Gravity.CENTER
-                  }
-                  root.addView(title)
-
-                  val sub = TextView(this).apply {
-                      text = "Store 047 High-Speed Assistant"
-                      setTextColor(Color.parseColor("#38BDF8"))
-                      textSize = 13f
-                      typeface = Typeface.DEFAULT_BOLD
-                      gravity = Gravity.CENTER
-                      setPadding(0, 6, 0, 40)
-                  }
-                  root.addView(sub)
-
-                  val statusCard = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setPadding(40, 36, 40, 36)
-                      gravity = Gravity.CENTER_HORIZONTAL
-                      layoutParams = LinearLayout.LayoutParams(
-                          LinearLayout.LayoutParams.MATCH_PARENT,
-                          LinearLayout.LayoutParams.WRAP_CONTENT
-                      ).apply { setMargins(0, 0, 0, 36) }
-                      background = GradientDrawable().apply {
-                          cornerRadius = 24f
-                          setColor(Color.parseColor("#161E2E"))
+                  Card(
+                      modifier = Modifier.fillMaxWidth(),
+                      shape = RoundedCornerShape(20.dp),
+                      colors = CardDefaults.cardColors(containerColor = Color(0xFF161E2E))
+                  ) {
+                      Column(
+                          modifier = Modifier
+                              .fillMaxWidth()
+                              .padding(24.dp),
+                          horizontalAlignment = Alignment.CenterHorizontally
+                      ) {
+                          Text(
+                              text = if (isEnabled) "● STATUS: RUNNING (ACTIVE)" else "● STATUS: STOPPED (OFF)",
+                              color = if (isEnabled) Color(0xFF22C55E) else Color(0xFFEF4444),
+                              fontSize = 18.sp,
+                              fontWeight = FontWeight.Bold
+                          )
+                          Spacer(modifier = Modifier.height(8.dp))
+                          Text(
+                              text = if (isEnabled)
+                                  "Auto-accept is active and monitoring Store 047 orders."
+                              else
+                                  "Service is paused. No auto-clicks will happen.",
+                              color = if (isEnabled) Color(0xFF86EFAC) else Color(0xFFFCA5A5),
+                              fontSize = 13.sp,
+                              textAlign = TextAlign.Center
+                          )
                       }
                   }
 
-                  statusText = TextView(this).apply {
-                      textSize = 18f
-                      typeface = Typeface.DEFAULT_BOLD
-                      gravity = Gravity.CENTER
-                  }
-                  statusDesc = TextView(this).apply {
-                      textSize = 13f
-                      gravity = Gravity.CENTER
-                      setPadding(0, 10, 0, 0)
-                  }
-                  statusCard.addView(statusText)
-                  statusCard.addView(statusDesc)
-                  root.addView(statusCard)
+                  Spacer(modifier = Modifier.height(28.dp))
 
-                  val buttonRow = LinearLayout(this).apply {
-                      orientation = LinearLayout.HORIZONTAL
-                      layoutParams = LinearLayout.LayoutParams(
-                          LinearLayout.LayoutParams.MATCH_PARENT,
-                          145
-                      ).apply { setMargins(0, 0, 0, 30) }
-                  }
+                  Row(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .height(60.dp),
+                      horizontalArrangement = Arrangement.spacedBy(16.dp)
+                  ) {
+                      Button(
+                          onClick = { onToggle(true) },
+                          modifier = Modifier
+                              .weight(1f)
+                              .fillMaxHeight(),
+                          shape = RoundedCornerShape(16.dp),
+                          colors = ButtonDefaults.buttonColors(
+                              containerColor = if (isEnabled) Color(0xFF15803D) else Color(0xFF1E293B)
+                          )
+                      ) {
+                          Text(
+                              text = "🟢 ON (START)",
+                              fontWeight = FontWeight.Bold,
+                              color = Color.White
+                          )
+                      }
 
-                  btnOn = Button(this).apply {
-                      text = "🟢 ON (START)"
-                      textSize = 15f
-                      typeface = Typeface.DEFAULT_BOLD
-                      setTextColor(Color.WHITE)
-                      val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
-                          setMargins(0, 0, 14, 0)
-                      }
-                      layoutParams = p
-                      setOnClickListener {
-                          setAutomation(true)
-                      }
-                  }
-
-                  btnOff = Button(this).apply {
-                      text = "🔴 OFF (STOP)"
-                      textSize = 15f
-                      typeface = Typeface.DEFAULT_BOLD
-                      setTextColor(Color.WHITE)
-                      val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply {
-                          setMargins(14, 0, 0, 0)
-                      }
-                      layoutParams = p
-                      setOnClickListener {
-                          setAutomation(false)
+                      Button(
+                          onClick = { onToggle(false) },
+                          modifier = Modifier
+                              .weight(1f)
+                              .fillMaxHeight(),
+                          shape = RoundedCornerShape(16.dp),
+                          colors = ButtonDefaults.buttonColors(
+                              containerColor = if (!isEnabled) Color(0xFFDC2626) else Color(0xFF1E293B)
+                          )
+                      ) {
+                          Text(
+                              text = "🔴 OFF (STOP)",
+                              fontWeight = FontWeight.Bold,
+                              color = Color.White
+                          )
                       }
                   }
-
-                  buttonRow.addView(btnOn)
-                  buttonRow.addView(btnOff)
-                  root.addView(buttonRow)
-
-                  val testBtn = Button(this).apply {
-                      text = "🧪 Test 047 Simulator"
-                      setTextColor(Color.WHITE)
-                      textSize = 14f
-                      typeface = Typeface.DEFAULT_BOLD
-                      val lp = LinearLayout.LayoutParams(
-                          LinearLayout.LayoutParams.MATCH_PARENT,
-                          125
-                      ).apply { setMargins(0, 20, 0, 0) }
-                      layoutParams = lp
-                      background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#334155"))
-                          cornerRadius = 18f
-                      }
-                      setOnClickListener {
-                          showSimulator()
-                      }
-                  }
-                  root.addView(testBtn)
-
-                  updateButtonsUI()
-                  return scrollView
-              }
-
-              private fun setAutomation(enabled: Boolean) {
-                  isEnabled = enabled
-                  prefs.setAutomationEnabled(enabled)
-                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
-                  sp.edit().putBoolean("key_automation_enabled", enabled).apply()
-
-                  if (enabled) {
-                      showRunningNotification()
-                      Toast.makeText(this, "mr.wow is ACTIVE", Toast.LENGTH_SHORT).show()
-                  } else {
-                      cancelRunningNotification()
-                      Toast.makeText(this, "mr.wow is STOPPED", Toast.LENGTH_SHORT).show()
-                  }
-                  updateButtonsUI()
-              }
-
-              private fun updateButtonsUI() {
-                  if (isEnabled) {
-                      statusText.text = "● STATUS: RUNNING (ACTIVE)"
-                      statusText.setTextColor(Color.parseColor("#22C55E"))
-                      statusDesc.text = "Auto-accept is active and scanning Store 047 orders."
-                      statusDesc.setTextColor(Color.parseColor("#86EFAC"))
-
-                      btnOn.background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#15803D"))
-                          cornerRadius = 18f
-                      }
-                      btnOff.background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#1E293B"))
-                          cornerRadius = 18f
-                      }
-                  } else {
-                      statusText.text = "● STATUS: STOPPED (OFF)"
-                      statusText.setTextColor(Color.parseColor("#EF4444"))
-                      statusDesc.text = "Service is paused. No clicks will be made."
-                      statusDesc.setTextColor(Color.parseColor("#FCA5A5"))
-
-                      btnOn.background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#1E293B"))
-                          cornerRadius = 18f
-                      }
-                      btnOff.background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#DC2626"))
-                          cornerRadius = 18f
-                      }
-                  }
-              }
-
-              private fun showSimulator() {
-                  val layout = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setBackgroundColor(Color.parseColor("#1E293B"))
-                      setPadding(50, 50, 50, 50)
-                      gravity = Gravity.CENTER_HORIZONTAL
-                  }
-                  val text = TextView(this).apply {
-                      text = "New Order: Store 047"
-                      setTextColor(Color.WHITE)
-                      textSize = 20f
-                      typeface = Typeface.DEFAULT_BOLD
-                  }
-                  val btn = Button(this).apply {
-                      text = "Accept the order"
-                      setTextColor(Color.WHITE)
-                      textSize = 15f
-                      background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#F59E0B"))
-                          cornerRadius = 16f
-                      }
-                      setOnClickListener {
-                          Toast.makeText(this@MainActivity, "Simulation Success: 047 clicked!", Toast.LENGTH_LONG).show()
-                      }
-                  }
-                  layout.addView(text)
-                  layout.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(1, 30) })
-                  layout.addView(btn)
-
-                  AlertDialog.Builder(this)
-                      .setView(layout)
-                      .create()
-                      .show()
-              }
-
-              override fun onResume() {
-                  super.onResume()
-                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
-                  isEnabled = sp.getBoolean("key_automation_enabled", true)
-                  if (isEnabled && isAccessibilityEnabled()) {
-                      showRunningNotification()
-                  }
-                  refreshScreens()
               }
           }
           EOF
