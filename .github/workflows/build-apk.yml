@@ -10,8 +10,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          clean: true
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -24,24 +22,22 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build Fresh APK
+      - name: Diagnose and Build
         run: |
-          # ১. গিটহাবে আগে পুশ হওয়া সব পুরনো আনজিপ ফাইল সম্পূর্ণ মুছে ক্লিন করা
-          rm -rf app settings.gradle* build.gradle* gradle*
-
-          # ২. আসল জিপ ফ্রেশ আনজিপ করা
+          # ১. ফ্রেশ আনজিপ
           unzip -q -o "*.zip" -d .
 
-          # ৩. ম্যানিফেস্ট ও থিম ফিক্স (যা বিল্ড #৬ এ সফল হয়েছিল)
+          # ২. থিম ও ম্যানিফেস্ট ফিক্স
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml 2>/dev/null || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml 2>/dev/null || true
           sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml 2>/dev/null || true
           sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml 2>/dev/null || true
 
-          # ৪. কোনো প্রকার কোটলিন ফাইল এডিট না করে সরাসরি ফ্রেশ বিল্ড
-          gradle clean assembleDebug --no-daemon
+          # ৩. আসল এরর দেখার জন্য বিস্তারিত লগসহ কম্পাইল
+          ./gradlew assembleDebug --stacktrace || gradle assembleDebug --stacktrace
 
       - name: Upload Finished APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: 047-AutoAccept-APK
