@@ -27,15 +27,16 @@ jobs:
           # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. অ্যাপের নাম "mr.wow" এবং থিম ফিক্স
-          sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">mr.wow<\/string>/g' app/src/main/res/values/strings.xml || true
+          # ২. মিসিং আইকন ও থিম রিমুভ (যা বিল্ড #৬ এ সফল হয়েছিল)
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
+          sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
+          sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
 
           # ৩. ডিফল্ট অটোমেশন সর্বদা TRUE রাখা
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # ৪. mr.wow MainActivity (ইংলিশ ইন্টারফেস, রানিং নোটিফিকেশন ও আলাদা পারমিশন পেজ)
+          # ৪. mr.wow MainActivity (অল ইংলিশ, আলাদা পারমিশন পেজ ও অন/অফ বাটন)
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
@@ -97,9 +98,7 @@ jobs:
               private fun createNotificationChannel() {
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       val name = "mr.wow Status"
-                      val descriptionText = "Shows background running status of mr.wow"
                       val channel = NotificationChannel(CHANNEL_ID, name, NotificationManager.IMPORTANCE_LOW).apply {
-                          description = descriptionText
                           setShowBadge(false)
                       }
                       val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -156,7 +155,6 @@ jobs:
                   }
               }
 
-              // Permission Page (Shown ONLY until granted)
               private fun createPermissionPage(): View {
                   val layout = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
@@ -183,7 +181,7 @@ jobs:
                   layout.addView(title)
 
                   val desc = TextView(this).apply {
-                      text = "mr.wow needs Accessibility Service permission to auto-accept Store 047 orders in real-time.\n\nOnce granted, this screen will never show again."
+                      text = "mr.wow needs Accessibility Service permission to auto-accept Store 047 orders in real-time.\n\nOnce enabled, this setup screen will never appear again."
                       setTextColor(Color.parseColor("#94A3B8"))
                       textSize = 14f
                       gravity = Gravity.CENTER
@@ -212,7 +210,6 @@ jobs:
                   return layout
               }
 
-              // Main Dashboard
               private fun createDashboardPage(): View {
                   val scrollView = ScrollView(this).apply {
                       setBackgroundColor(Color.parseColor("#0B0F19"))
@@ -245,7 +242,6 @@ jobs:
                   }
                   root.addView(sub)
 
-                  // Status Card
                   val statusCard = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       setPadding(40, 36, 40, 36)
@@ -274,7 +270,6 @@ jobs:
                   statusCard.addView(statusDesc)
                   root.addView(statusCard)
 
-                  // Two Buttons: ON and OFF
                   val buttonRow = LinearLayout(this).apply {
                       orientation = LinearLayout.HORIZONTAL
                       layoutParams = LinearLayout.LayoutParams(
@@ -315,7 +310,6 @@ jobs:
                   buttonRow.addView(btnOff)
                   root.addView(buttonRow)
 
-                  // Test Simulator
                   val testBtn = Button(this).apply {
                       text = "🧪 Test 047 Simulator"
                       setTextColor(Color.WHITE)
@@ -348,10 +342,10 @@ jobs:
 
                   if (enabled) {
                       showRunningNotification()
-                      Toast.makeText(this, "✅ mr.wow is ACTIVE!", Toast.LENGTH_SHORT).show()
+                      Toast.makeText(this, "mr.wow is ACTIVE", Toast.LENGTH_SHORT).show()
                   } else {
                       cancelRunningNotification()
-                      Toast.makeText(this, "⏸️ mr.wow is STOPPED!", Toast.LENGTH_SHORT).show()
+                      Toast.makeText(this, "mr.wow is STOPPED", Toast.LENGTH_SHORT).show()
                   }
                   updateButtonsUI()
               }
