@@ -22,25 +22,20 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build mr.wow Pro APK
+      - name: Build mr.wow APK
         run: |
           # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. অ্যাপের নাম পরিবর্তন করে "mr.wow" করা
+          # ২. অ্যাপের নাম "mr.wow" এবং থিম ফিক্স
           sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">mr.wow<\/string>/g' app/src/main/res/values/strings.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
-          sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
-          sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
-
-          # ম্যানিফেস্টে নোটিফিকেশন পারমিশন ও লেবেল নিশ্চিত করা
-          sed -i 's/<application/<uses-permission android:name="android.permission.POST_NOTIFICATIONS" \/><application android:label="mr.wow"/g' app/src/main/AndroidManifest.xml || true
 
           # ৩. ডিফল্ট অটোমেশন সর্বদা TRUE রাখা
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # ৪. mr.wow MainActivity (অল ইংলিশ, রানিং নোটিফিকেশন ও আলাদা পারমিশন পেজ)
+          # ৪. mr.wow MainActivity (ইংলিশ ইন্টারফেস, রানিং নোটিফিকেশন ও আলাদা পারমিশন পেজ)
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
@@ -70,7 +65,7 @@ jobs:
 
           class MainActivity : ComponentActivity() {
 
-              private val CHANNEL_ID = "mr_wow_running_channel"
+              private val CHANNEL_ID = "mr_wow_channel"
               private val NOTIFICATION_ID = 47001
 
               private lateinit var prefs: PreferencesManager
@@ -101,48 +96,50 @@ jobs:
 
               private fun createNotificationChannel() {
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      val name = "mr.wow Service Status"
-                      val descriptionText = "Shows real-time background status of mr.wow"
-                      val importance = NotificationManager.IMPORTANCE_LOW
-                      val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
+                      val name = "mr.wow Status"
+                      val descriptionText = "Shows background running status of mr.wow"
+                      val channel = NotificationChannel(CHANNEL_ID, name, NotificationManager.IMPORTANCE_LOW).apply {
                           description = descriptionText
                           setShowBadge(false)
                       }
-                      val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                      notificationManager.createNotificationChannel(channel)
+                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      nm.createNotificationChannel(channel)
                   }
               }
 
               private fun showRunningNotification() {
-                  val intent = Intent(this, MainActivity::class.java).apply {
-                      flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                  }
-                  val pendingIntent = PendingIntent.getActivity(
-                      this,
-                      0,
-                      intent,
-                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                  )
+                  try {
+                      val intent = Intent(this, MainActivity::class.java).apply {
+                          flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                      }
+                      val pendingIntent = PendingIntent.getActivity(
+                          this,
+                          0,
+                          intent,
+                          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                      )
 
-                  val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-                      .setSmallIcon(android.R.drawable.stat_notify_sync)
-                      .setContentTitle("mr.wow - Active & Running")
-                      .setContentText("Monitoring Branch 047 orders in high-speed mode.")
-                      .setPriority(NotificationCompat.PRIORITY_LOW)
-                      .setOngoing(true)
-                      .setContentIntent(pendingIntent)
+                      val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+                          .setSmallIcon(android.R.drawable.stat_notify_sync)
+                          .setContentTitle("mr.wow - Active & Running")
+                          .setContentText("Monitoring Store 047 orders in high-speed mode.")
+                          .setPriority(NotificationCompat.PRIORITY_LOW)
+                          .setOngoing(true)
+                          .setContentIntent(pendingIntent)
 
-                  val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                  notificationManager.notify(NOTIFICATION_ID, builder.build())
+                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      nm.notify(NOTIFICATION_ID, builder.build())
+                  } catch (e: Exception) {}
               }
 
               private fun cancelRunningNotification() {
-                  val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                  notificationManager.cancel(NOTIFICATION_ID)
+                  try {
+                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      nm.cancel(NOTIFICATION_ID)
+                  } catch (e: Exception) {}
               }
 
               private fun isAccessibilityEnabled(): Boolean {
-                  val service = "${packageName}/com.autoaccept.store047.service.AutoAcceptAccessibilityService"
                   val enabledServices = Settings.Secure.getString(
                       contentResolver,
                       Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
@@ -159,7 +156,7 @@ jobs:
                   }
               }
 
-              // Accessibility Setup Page (Shown ONLY until turned ON)
+              // Permission Page (Shown ONLY until granted)
               private fun createPermissionPage(): View {
                   val layout = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
@@ -177,16 +174,16 @@ jobs:
                   layout.addView(icon)
 
                   val title = TextView(this).apply {
-                      text = "Permission Required"
+                      text = "Accessibility Permission Required"
                       setTextColor(Color.WHITE)
-                      textSize = 23f
+                      textSize = 21f
                       typeface = Typeface.DEFAULT_BOLD
                       gravity = Gravity.CENTER
                   }
                   layout.addView(title)
 
                   val desc = TextView(this).apply {
-                      text = "mr.wow needs Accessibility Service permission to detect and auto-click Store 047 orders in real-time.\n\nOnce granted, this setup screen will never appear again."
+                      text = "mr.wow needs Accessibility Service permission to auto-accept Store 047 orders in real-time.\n\nOnce granted, this screen will never show again."
                       setTextColor(Color.parseColor("#94A3B8"))
                       textSize = 14f
                       gravity = Gravity.CENTER
@@ -195,7 +192,7 @@ jobs:
                   layout.addView(desc)
 
                   val btn = Button(this).apply {
-                      text = "ENABLE ACCESSIBILITY PERMISSION"
+                      text = "OPEN ACCESSIBILITY SETTINGS"
                       setTextColor(Color.WHITE)
                       textSize = 14f
                       typeface = Typeface.DEFAULT_BOLD
@@ -215,7 +212,7 @@ jobs:
                   return layout
               }
 
-              // Main Dashboard Page
+              // Main Dashboard
               private fun createDashboardPage(): View {
                   val scrollView = ScrollView(this).apply {
                       setBackgroundColor(Color.parseColor("#0B0F19"))
@@ -229,7 +226,6 @@ jobs:
                   }
                   scrollView.addView(root)
 
-                  // App Title
                   val title = TextView(this).apply {
                       text = "mr.wow"
                       setTextColor(Color.WHITE)
@@ -240,7 +236,7 @@ jobs:
                   root.addView(title)
 
                   val sub = TextView(this).apply {
-                      text = "Branch 047 High-Speed Assistant"
+                      text = "Store 047 High-Speed Assistant"
                       setTextColor(Color.parseColor("#38BDF8"))
                       textSize = 13f
                       typeface = Typeface.DEFAULT_BOLD
@@ -278,7 +274,7 @@ jobs:
                   statusCard.addView(statusDesc)
                   root.addView(statusCard)
 
-                  // Two Distinct ON and OFF Buttons
+                  // Two Buttons: ON and OFF
                   val buttonRow = LinearLayout(this).apply {
                       orientation = LinearLayout.HORIZONTAL
                       layoutParams = LinearLayout.LayoutParams(
@@ -287,7 +283,6 @@ jobs:
                       ).apply { setMargins(0, 0, 0, 30) }
                   }
 
-                  // 🟢 ON BUTTON
                   btnOn = Button(this).apply {
                       text = "🟢 ON (START)"
                       textSize = 15f
@@ -302,7 +297,6 @@ jobs:
                       }
                   }
 
-                  // 🔴 OFF BUTTON
                   btnOff = Button(this).apply {
                       text = "🔴 OFF (STOP)"
                       textSize = 15f
@@ -321,7 +315,7 @@ jobs:
                   buttonRow.addView(btnOff)
                   root.addView(buttonRow)
 
-                  // Test Order Simulator
+                  // Test Simulator
                   val testBtn = Button(this).apply {
                       text = "🧪 Test 047 Simulator"
                       setTextColor(Color.WHITE)
@@ -357,7 +351,7 @@ jobs:
                       Toast.makeText(this, "✅ mr.wow is ACTIVE!", Toast.LENGTH_SHORT).show()
                   } else {
                       cancelRunningNotification()
-                      Toast.makeText(this, "⏸️ mr.wow is PAUSED!", Toast.LENGTH_SHORT).show()
+                      Toast.makeText(this, "⏸️ mr.wow is STOPPED!", Toast.LENGTH_SHORT).show()
                   }
                   updateButtonsUI()
               }
@@ -366,7 +360,7 @@ jobs:
                   if (isEnabled) {
                       statusText.text = "● STATUS: RUNNING (ACTIVE)"
                       statusText.setTextColor(Color.parseColor("#22C55E"))
-                      statusDesc.text = "Auto-accept is active and scanning for Branch 047 orders."
+                      statusDesc.text = "Auto-accept is active and scanning Store 047 orders."
                       statusDesc.setTextColor(Color.parseColor("#86EFAC"))
 
                       btnOn.background = GradientDrawable().apply {
@@ -416,7 +410,7 @@ jobs:
                           cornerRadius = 16f
                       }
                       setOnClickListener {
-                          Toast.makeText(this@MainActivity, "Simulation Success: 047 detected!", Toast.LENGTH_LONG).show()
+                          Toast.makeText(this@MainActivity, "Simulation Success: 047 clicked!", Toast.LENGTH_LONG).show()
                       }
                   }
                   layout.addView(text)
@@ -441,7 +435,7 @@ jobs:
           }
           EOF
 
-          # ৫. APK কম্পাইল
+          # ৫. আসল APK কম্পাইল করা
           gradle assembleDebug
 
       - name: Upload Finished APK
