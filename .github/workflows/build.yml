@@ -22,28 +22,45 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build Modern Designed APK
+      - name: Build McDonald's Custom APK
         run: |
           # ১. আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. থিম ও ম্যানিফেস্ট ফিক্স
+          # ২. ম্যাকডোনাল্ডস (McDonald's) অফিসিয়াল "M" লোগো তৈরি
+          cat << 'EOF' > app/src/main/res/drawable/mcdonalds_logo.xml
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path
+                  android:fillColor="#DA291C"
+                  android:pathData="M0,0h108v108h-108z" />
+              <path
+                  android:fillColor="#FFC72C"
+                  android:pathData="M30,80 C30,48 40,36 50,36 C53,36 54,40 54,46 C54,40 55,36 58,36 C68,36 78,48 78,80 L70,80 C70,52 64,44 58,44 C55,44 54,48 54,58 L54,80 L48,80 L48,58 C48,48 47,44 44,44 C38,44 32,52 32,80 Z" />
+          </vector>
+          EOF
+
+          # ৩. থিম ও ম্যানিফেস্টে ম্যাকডোনাল্ডস আইকন যুক্ত করা
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
+          sed -i 's/<application/<application android:icon="@drawable\/mcdonalds_logo" android:roundIcon="@drawable\/mcdonalds_logo"/g' app/src/main/AndroidManifest.xml || true
 
-          # ৩. PreferencesManager-এ ডিফল্ট অটোমেশন সর্বদা TRUE করা
+          # ৪. অটোমেশন ডিফল্ট TRUE করা
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # ৪. অন/অফ সুইচ ও রিয়েল-টাইম ড্যাশবোর্ড সহ MainActivity তৈরি
+          # ৫. পারফেক্ট MainActivity (অন/অফ সুইচ, নিজের ছবি আপলোড ও টেস্ট বাটন সহ)
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
-          import android.app.Activity
           import android.app.AlertDialog
           import android.content.Context
           import android.content.Intent
+          import android.graphics.BitmapFactory
           import android.graphics.Color
           import android.graphics.Typeface
           import android.graphics.drawable.GradientDrawable
@@ -54,20 +71,26 @@ jobs:
           import android.view.Gravity
           import android.view.View
           import android.widget.Button
+          import android.widget.FrameLayout
+          import android.widget.ImageView
           import android.widget.LinearLayout
           import android.widget.ScrollView
           import android.widget.Switch
           import android.widget.TextView
           import android.widget.Toast
-          import com.autoaccept.store047.data.PreferencesManager
+          import androidx.activity.ComponentActivity
+          import java.io.File
+          import java.io.FileOutputStream
 
-          class MainActivity : Activity() {
+          class MainActivity : ComponentActivity() {
 
-              private lateinit var prefs: PreferencesManager
+              private val PICK_IMAGE_REQUEST = 1001
               private lateinit var switchToggle: Switch
               private lateinit var statusBadge: TextView
               private lateinit var statusDesc: TextView
               private lateinit var btnPermission: Button
+              private lateinit var rootContainer: FrameLayout
+              private lateinit var bgImageView: ImageView
               private val handler = Handler(Looper.getMainLooper())
 
               private val refreshRunnable = object : Runnable {
@@ -79,40 +102,90 @@ jobs:
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
-                  prefs = PreferencesManager.getInstance(this)
-                  prefs.setAutomationEnabled(true)
+
+                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
+                  if (!sp.contains("key_automation_enabled")) {
+                      sp.edit().putBoolean("key_automation_enabled", true).apply()
+                  }
+
+                  rootContainer = FrameLayout(this)
+
+                  // ব্যাকগ্রাউন্ড ইমেজ (আপনার ছবি)
+                  bgImageView = ImageView(this).apply {
+                      layoutParams = FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT,
+                          FrameLayout.LayoutParams.MATCH_PARENT
+                      )
+                      scaleType = ImageView.ScaleType.CENTER_CROP
+                  }
+                  rootContainer.addView(bgImageView)
+
+                  // ডার্ক ওভারলে (লেখা পরিষ্কার দেখার জন্য)
+                  val overlay = View(this).apply {
+                      layoutParams = FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT,
+                          FrameLayout.LayoutParams.MATCH_PARENT
+                      )
+                      setBackgroundColor(Color.parseColor("#E6090D16"))
+                  }
+                  rootContainer.addView(overlay)
 
                   val scrollView = ScrollView(this).apply {
-                      setBackgroundColor(Color.parseColor("#0B0F19"))
                       isFillViewport = true
                   }
 
-                  val root = LinearLayout(this).apply {
+                  val content = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
-                      setPadding(44, 60, 44, 50)
+                      setPadding(44, 50, 44, 50)
                   }
-                  scrollView.addView(root)
+                  scrollView.addView(content)
 
+                  // হেডার
                   val headerLayout = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       setPadding(0, 0, 0, 36)
                   }
                   val title = TextView(this).apply {
-                      text = "047 Auto Accept Pro"
+                      text = "047 Auto Accept"
                       setTextColor(Color.WHITE)
                       textSize = 24f
                       typeface = Typeface.DEFAULT_BOLD
                   }
                   val sub = TextView(this).apply {
-                      text = "Branch 047 Assistant"
-                      setTextColor(Color.parseColor("#94A3B8"))
+                      text = "McDonald's Store 047 High-Speed Assistant"
+                      setTextColor(Color.parseColor("#FFC72C"))
                       textSize = 13f
+                      typeface = Typeface.DEFAULT_BOLD
                       setPadding(0, 6, 0, 0)
                   }
                   headerLayout.addView(title)
                   headerLayout.addView(sub)
-                  root.addView(headerLayout)
+                  content.addView(headerLayout)
 
+                  // ছবি বদলানোর বাটন
+                  val changePhotoBtn = Button(this).apply {
+                      text = "📸 গ্যালারি থেকে ব্যাকগ্রাউন্ডে নিজের ছবি দিন"
+                      setTextColor(Color.WHITE)
+                      textSize = 13f
+                      typeface = Typeface.DEFAULT_BOLD
+                      background = GradientDrawable().apply {
+                          setColor(Color.parseColor("#374151"))
+                          cornerRadius = 16f
+                      }
+                      val lp = LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT
+                      ).apply { setMargins(0, 0, 0, 30) }
+                      layoutParams = lp
+                      setOnClickListener {
+                          val intent = Intent(Intent.ACTION_PICK)
+                          intent.type = "image/*"
+                          startActivityForResult(intent, PICK_IMAGE_REQUEST)
+                      }
+                  }
+                  content.addView(changePhotoBtn)
+
+                  // মাস্টার অন/অফ সুইচ
                   val switchCard = LinearLayout(this).apply {
                       orientation = LinearLayout.HORIZONTAL
                       gravity = Gravity.CENTER_VERTICAL
@@ -134,7 +207,7 @@ jobs:
                       typeface = Typeface.DEFAULT_BOLD
                   }
                   val switchSub = TextView(this).apply {
-                      text = "চালু থাকলে ০৪৭ অর্ডার স্বয়ংক্রিয়ভাবে ক্লিক হবে"
+                      text = "চালু থাকলে ০৪৭ অর্ডার পলকে এক্সেপ্ট হবে"
                       setTextColor(Color.parseColor("#94A3B8"))
                       textSize = 12f
                       setPadding(0, 4, 0, 0)
@@ -142,15 +215,14 @@ jobs:
                   switchTextLayout.addView(switchLabel)
                   switchTextLayout.addView(switchSub)
 
-                  val sp = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
-                  val initialEnabled = sp.getBoolean("key_automation_enabled", true)
-
+                  val isAutoEnabled = sp.getBoolean("key_automation_enabled", true)
                   switchToggle = Switch(this).apply {
-                      isChecked = initialEnabled
+                      isChecked = isAutoEnabled
                       scaleX = 1.2f
                       scaleY = 1.2f
                       setOnCheckedChangeListener { _, isChecked ->
-                          prefs.setAutomationEnabled(isChecked)
+                          val prefs = getSharedPreferences("auto_accept_047_prefs", Context.MODE_PRIVATE)
+                          prefs.edit().putBoolean("key_automation_enabled", isChecked).apply()
                           Toast.makeText(
                               this@MainActivity,
                               if (isChecked) "অটো-এক্সেপ্ট চালু হয়েছে" else "অটো-এক্সেপ্ট বন্ধ করা হয়েছে",
@@ -161,22 +233,22 @@ jobs:
                   }
                   switchCard.addView(switchTextLayout)
                   switchCard.addView(switchToggle)
-                  root.addView(switchCard)
+                  content.addView(switchCard)
 
+                  // এক্সেসিবিলিটি স্ট্যাটাস কার্ড
                   val statusCard = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       setPadding(40, 36, 40, 36)
                       val lp = LinearLayout.LayoutParams(
                           LinearLayout.LayoutParams.MATCH_PARENT,
                           LinearLayout.LayoutParams.WRAP_CONTENT
-                      ).apply { setMargins(0, 28, 0, 28) }
+                      ).apply { setMargins(0, 26, 0, 26) }
                       layoutParams = lp
                       background = GradientDrawable().apply {
                           cornerRadius = 24f
                           setColor(Color.parseColor("#161E2E"))
                       }
                   }
-
                   statusBadge = TextView(this).apply {
                       textSize = 15f
                       typeface = Typeface.DEFAULT_BOLD
@@ -202,42 +274,18 @@ jobs:
                   statusCard.addView(statusBadge)
                   statusCard.addView(statusDesc)
                   statusCard.addView(btnPermission)
-                  root.addView(statusCard)
+                  content.addView(statusCard)
 
-                  val infoCard = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setPadding(36, 28, 36, 28)
-                      background = GradientDrawable().apply {
-                          cornerRadius = 20f
-                          setColor(Color.parseColor("#111827"))
-                          setStroke(2, Color.parseColor("#1F2937"))
-                      }
-                  }
-                  val infoTitle = TextView(this).apply {
-                      text = "টার্গেট ইনফো"
-                      setTextColor(Color.parseColor("#38BDF8"))
-                      textSize = 14f
-                      typeface = Typeface.DEFAULT_BOLD
-                  }
-                  val infoDetails = TextView(this).apply {
-                      text = "• ব্রাঞ্চ কোড: 047 (Al-Sharouq / McDonald's)\n• টার্গেট বাটন: Accept the order / قبول الطلب\n• স্ট্যাটাস: ব্যাকগ্রাউন্ডে স্বয়ংক্রিয় স্ক্যান সক্রিয়"
-                      setTextColor(Color.parseColor("#CBD5E1"))
-                      textSize = 12f
-                      setPadding(0, 8, 0, 0)
-                  }
-                  infoCard.addView(infoTitle)
-                  infoCard.addView(infoDetails)
-                  root.addView(infoCard)
-
+                  // টেস্ট বাটন
                   val testBtn = Button(this).apply {
-                      text = "টেস্ট করুন (Test 047 Order Simulator)"
+                      text = "🧪 টেস্ট করুন (Test 047 Order)"
                       setTextColor(Color.WHITE)
                       textSize = 14f
                       typeface = Typeface.DEFAULT_BOLD
                       val lp = LinearLayout.LayoutParams(
                           LinearLayout.LayoutParams.MATCH_PARENT,
                           LinearLayout.LayoutParams.WRAP_CONTENT
-                      ).apply { setMargins(0, 28, 0, 20) }
+                      ).apply { setMargins(0, 10, 0, 20) }
                       layoutParams = lp
                       background = GradientDrawable().apply {
                           setColor(Color.parseColor("#059669"))
@@ -247,9 +295,37 @@ jobs:
                           showSimulator()
                       }
                   }
-                  root.addView(testBtn)
+                  content.addView(testBtn)
 
-                  setContentView(scrollView)
+                  rootContainer.addView(scrollView)
+                  setContentView(rootContainer)
+                  loadSavedPhoto()
+              }
+
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  super.onActivityResult(requestCode, resultCode, data)
+                  if (requestCode == PICK_IMAGE_REQUEST && resultCode == RESULT_OK && data?.data != null) {
+                      try {
+                          val inputStream = contentResolver.openInputStream(data.data!!)
+                          val file = File(filesDir, "custom_bg.jpg")
+                          val outputStream = FileOutputStream(file)
+                          inputStream?.copyTo(outputStream)
+                          inputStream?.close()
+                          outputStream.close()
+                          loadSavedPhoto()
+                          Toast.makeText(this, "ব্যাকগ্রাউন্ডে ছবি সেট হয়েছে!", Toast.LENGTH_SHORT).show()
+                      } catch (e: Exception) {
+                          Toast.makeText(this, "ছবি লোড করা যায়নি", Toast.LENGTH_SHORT).show()
+                      }
+                  }
+              }
+
+              private fun loadSavedPhoto() {
+                  val file = File(filesDir, "custom_bg.jpg")
+                  if (file.exists()) {
+                      val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                      bgImageView.setImageBitmap(bitmap)
+                  }
               }
 
               private fun showSimulator() {
@@ -270,7 +346,7 @@ jobs:
                       setTextColor(Color.WHITE)
                       textSize = 15f
                       background = GradientDrawable().apply {
-                          setColor(Color.parseColor("#F59E0B"))
+                          setColor(Color.parseColor("#DA291C"))
                           cornerRadius = 16f
                       }
                       setOnClickListener {
@@ -346,7 +422,7 @@ jobs:
           }
           EOF
 
-          # ৫. আসল APK কম্পাইল করা
+          # ৬. আসল APK কম্পাইল করা
           gradle assembleDebug
 
       - name: Upload Finished APK
