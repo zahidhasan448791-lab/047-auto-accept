@@ -22,28 +22,28 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build mr.wow APK
+      - name: Build mr.wow Official APK
         run: |
-          # ১. আনজিপ
+          # ১. আসল জিপ আনজিপ
           unzip -o "*.zip" -d .
 
-          # ২. অ্যাপ নাম ও থিম ফিক্স
+          # ২. অ্যাপের নাম পরিবর্তন করে mr.wow করা
           sed -i 's/<string name="app_name">.*<\/string>/<string name="app_name">mr.wow<\/string>/g' app/src/main/res/values/strings.xml || true
+
+          # ৩. থিম ও ম্যানিফেস্ট ফিক্স (আইকন এরর দূর করা)
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/res/values/themes.xml || true
           sed -i 's/Theme.047AutoAccept/Theme.AutoAccept/g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:icon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
           sed -i 's/android:roundIcon="[^"]*"//g' app/src/main/AndroidManifest.xml || true
 
-          # ৩. ডিফল্ট অটোমেশন সর্বদা TRUE
+          # ৪. ডিফল্ট অটোমেশন সর্বদা TRUE রাখা
           sed -i 's/DEFAULT_AUTOMATION_ENABLED = false/DEFAULT_AUTOMATION_ENABLED = true/g' app/src/main/java/com/autoaccept/store047/data/PreferencesManager.kt || true
 
-          # ৪. mr.wow MainActivity (স্ট্যান্ডার্ড অ্যান্ড্রয়েড ফ্রেমওয়ার্ক)
+          # ৫. নিখুঁত mr.wow MainActivity (সোর্স কোডের অরিজিনাল আর্কিটেকচার অনুযায়ী তৈরি)
           cat << 'EOF' > app/src/main/java/com/autoaccept/store047/MainActivity.kt
           package com.autoaccept.store047
 
-          import android.app.Activity
           import android.app.AlertDialog
-          import android.app.Notification
           import android.app.NotificationChannel
           import android.app.NotificationManager
           import android.app.PendingIntent
@@ -63,9 +63,11 @@ jobs:
           import android.widget.ScrollView
           import android.widget.TextView
           import android.widget.Toast
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.app.NotificationCompat
           import com.autoaccept.store047.data.PreferencesManager
 
-          class MainActivity : Activity() {
+          class MainActivity : AppCompatActivity() {
 
               private val CHANNEL_ID = "mr_wow_channel"
               private val NOTIFICATION_ID = 47001
@@ -98,8 +100,10 @@ jobs:
 
               private fun createNotificationChannel() {
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      val name = "mr.wow Status"
+                      val name = "mr.wow Service Status"
+                      val descriptionText = "Running status of mr.wow"
                       val channel = NotificationChannel(CHANNEL_ID, name, NotificationManager.IMPORTANCE_LOW).apply {
+                          description = descriptionText
                           setShowBadge(false)
                       }
                       val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -119,28 +123,16 @@ jobs:
                           PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                       )
 
+                      val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+                          .setSmallIcon(android.R.drawable.ic_dialog_info)
+                          .setContentTitle("mr.wow - Active & Running")
+                          .setContentText("Monitoring Store 047 orders in real-time.")
+                          .setPriority(NotificationCompat.PRIORITY_LOW)
+                          .setOngoing(true)
+                          .setContentIntent(pendingIntent)
+
                       val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-                      val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                          Notification.Builder(this, CHANNEL_ID)
-                              .setSmallIcon(android.R.drawable.ic_dialog_info)
-                              .setContentTitle("mr.wow - Active & Running")
-                              .setContentText("Monitoring Store 047 orders in high-speed mode.")
-                              .setContentIntent(pendingIntent)
-                              .setOngoing(true)
-                              .build()
-                      } else {
-                          @Suppress("DEPRECATION")
-                          Notification.Builder(this)
-                              .setSmallIcon(android.R.drawable.ic_dialog_info)
-                              .setContentTitle("mr.wow - Active & Running")
-                              .setContentText("Monitoring Store 047 orders in high-speed mode.")
-                              .setContentIntent(pendingIntent)
-                              .setOngoing(true)
-                              .build()
-                      }
-
-                      nm.notify(NOTIFICATION_ID, notification)
+                      nm.notify(NOTIFICATION_ID, builder.build())
                   } catch (e: Exception) {}
               }
 
@@ -152,6 +144,7 @@ jobs:
               }
 
               private fun isAccessibilityEnabled(): Boolean {
+                  val service = "${packageName}/com.autoaccept.store047.service.AutoAcceptAccessibilityService"
                   val enabledServices = Settings.Secure.getString(
                       contentResolver,
                       Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
@@ -185,7 +178,7 @@ jobs:
                   layout.addView(icon)
 
                   val title = TextView(this).apply {
-                      text = "Accessibility Permission Required"
+                      text = "Permission Required"
                       setTextColor(Color.WHITE)
                       textSize = 21f
                       typeface = Typeface.DEFAULT_BOLD
@@ -194,7 +187,7 @@ jobs:
                   layout.addView(title)
 
                   val desc = TextView(this).apply {
-                      text = "mr.wow needs Accessibility Service permission to auto-accept Store 047 orders in real-time.\n\nOnce enabled, this setup screen will never appear again."
+                      text = "mr.wow needs Accessibility Service permission to auto-accept Store 047 orders.\n\nOnce enabled, this setup screen will never appear again."
                       setTextColor(Color.parseColor("#94A3B8"))
                       textSize = 14f
                       gravity = Gravity.CENTER
@@ -203,7 +196,7 @@ jobs:
                   layout.addView(desc)
 
                   val btn = Button(this).apply {
-                      text = "OPEN ACCESSIBILITY SETTINGS"
+                      text = "ENABLE ACCESSIBILITY PERMISSION"
                       setTextColor(Color.WHITE)
                       textSize = 14f
                       typeface = Typeface.DEFAULT_BOLD
@@ -442,7 +435,7 @@ jobs:
           }
           EOF
 
-          # ৫. APK কম্পাইল
+          # ৬. আসল APK কম্পাইল করা
           gradle assembleDebug
 
       - name: Upload Finished APK
